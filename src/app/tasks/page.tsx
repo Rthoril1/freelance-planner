@@ -8,7 +8,7 @@ import { TaskType, Priority, EnergyLevel } from '@/types';
 import { PRESET_PLATFORMS, PresetAction } from '@/lib/constants';
 
 export default function TasksPage() {
-  const { tasks, projects, companies, addTask, deleteTask } = useStore();
+  const { tasks, projects, companies, addTask, deleteTask, profile } = useStore();
   const [newTask, setNewTask] = useState({
     name: '',
     projectId: '',
@@ -16,7 +16,8 @@ export default function TasksPage() {
     priority: 'Medium' as Priority,
     estimatedDuration: 1,
     energyLevel: 'Medium' as EnergyLevel,
-    notes: ''
+    notes: '',
+    frequency: { timesPerDay: 1, daysPerWeek: 1 }
   });
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -202,6 +203,60 @@ export default function TasksPage() {
               </div>
 
             </div>
+
+            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 mt-6">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Times per Day</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[1, 2, 3, 4, 5].map(v => (
+                    <button key={v} type="button" 
+                      onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, timesPerDay: v }}))}
+                      className={`px-4 py-1.5 text-xs rounded-md border transition-all ${newTask.frequency?.timesPerDay === v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/50'}`}>
+                      {v}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Days per Week</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 7].map(v => (
+                    <button key={v} type="button" 
+                      onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, daysPerWeek: v }}))}
+                      className={`px-4 py-1.5 text-xs rounded-md border transition-all ${newTask.frequency?.daysPerWeek === v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/50'}`}>
+                      {v} days
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Impact & Capacity Preview */}
+            <div className="mt-8 p-4 rounded-xl bg-primary/5 border border-primary/10 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <span className="text-lg font-bold text-primary">
+                    {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration}h
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-primary/80 uppercase tracking-wider">Total Weekly Impact</p>
+                  <p className="text-[10px] text-muted-foreground italic">
+                    {newTask.estimatedDuration}h × {newTask.frequency?.timesPerDay}x/d × {newTask.frequency?.daysPerWeek}d
+                  </p>
+                </div>
+              </div>
+              
+              {profile?.weeklyHoursAvailable && (
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase">Capacity Check</p>
+                  <p className={`text-xs font-bold ${(tasks.reduce((acc, t) => acc + t.estimatedDuration, 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration)) > (profile.weeklyHoursAvailable || 60) ? 'text-destructive' : 'text-emerald-500'}`}>
+                    {tasks.reduce((acc, t) => acc + t.estimatedDuration, 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration)} / {profile.weeklyHoursAvailable}h
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mt-6 pt-4 border-t border-border/50 flex gap-3 justify-end items-center bg-card">
@@ -214,6 +269,37 @@ export default function TasksPage() {
 
         {/* Right Column: Tasks List */}
         <div className="w-full lg:w-1/2 xl:w-7/12 flex flex-col h-full overflow-hidden">
+          <div className="flex items-center justify-between mb-4 bg-card/60 p-4 border border-border/50 rounded-xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/30 to-transparent" />
+             <div>
+               <h3 className="text-xl font-bold tracking-tight">Tasks Queue</h3>
+               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest opacity-60">Backlog for scheduling</p>
+             </div>
+             {profile?.weeklyHoursAvailable && (
+                <div className="flex flex-col items-end gap-1">
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Total Task Load</p>
+                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-primary'}`}>
+                        {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0)}h
+                      </p>
+                    </div>
+                    <div className="h-8 w-px bg-border/50" />
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Remaining</p>
+                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                        {Math.max(0, profile.weeklyHoursAvailable - tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0))}h / {profile.weeklyHoursAvailable}h
+                      </p>
+                    </div>
+                  </div>
+                  <div className="w-full min-w-[180px] h-1.5 bg-muted rounded-full overflow-hidden mt-1">
+                    <div className={`h-full rounded-full ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'bg-destructive' : 'bg-primary'}`} 
+                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
+                    />
+                  </div>
+                </div>
+              )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3 overflow-y-auto items-start custom-scrollbar pr-2 pb-10 content-start flex-1">
             {tasks.filter(t => t.status === 'Todo').map(task => {
               const project = projects.find(p => p.id === task.projectId);
@@ -243,6 +329,11 @@ export default function TasksPage() {
                         {task.priority}
                       </span>
                       <span className="bg-muted px-1 py-0.5 rounded truncate">{task.type.replace('/Testing','')}</span>
+                      {task.frequency && (task.frequency.timesPerDay > 1 || task.frequency.daysPerWeek > 1) && (
+                        <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded font-bold">
+                          {task.frequency.timesPerDay}x/d • {task.frequency.daysPerWeek}d
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="pl-3 flex items-center justify-between border-t border-border/40 pt-2 mt-auto">

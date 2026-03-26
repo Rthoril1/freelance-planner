@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
@@ -12,6 +13,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const isPublic = ['/login', '/register'].includes(pathname);
+  const fetchData = useStore(state => state.fetchData);
+  const isLoadingData = useStore(state => state.loading);
+
+  useEffect(() => {
+    if (!isPublic) {
+      fetchData();
+    }
+  }, [isPublic, fetchData]);
 
   if (isPublic) {
     return (
@@ -55,8 +64,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       <div className="w-full flex flex-col lg:pl-64 min-h-screen">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 max-w-[1600px] mx-auto w-full">
-          {children}
+        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 max-w-[1600px] mx-auto w-full relative min-h-[50vh]">
+          {isLoadingData ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                <p className="text-sm font-medium text-muted-foreground animate-pulse">Sincronizando con Supabase...</p>
+              </div>
+            </div>
+          ) : children}
         </main>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { supabase } from '@/lib/supabase';
 import { Company, Project, Task, UserProfile } from '../types';
 
 interface AppState {
@@ -7,101 +7,151 @@ interface AppState {
   companies: Company[];
   projects: Project[];
   tasks: Task[];
+  loading: boolean;
 
-  setProfile: (profile: UserProfile) => void;
+  fetchData: () => Promise<void>;
+
+  setProfile: (profile: UserProfile) => Promise<void>;
   
-  addCompany: (company: Company) => void;
-  updateCompany: (id: string, company: Partial<Company>) => void;
-  deleteCompany: (id: string) => void;
+  addCompany: (company: Company) => Promise<void>;
+  updateCompany: (id: string, company: Partial<Company>) => Promise<void>;
+  deleteCompany: (id: string) => Promise<void>;
 
-  addProject: (project: Project) => void;
-  updateProject: (id: string, project: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
+  addProject: (project: Project) => Promise<void>;
+  updateProject: (id: string, project: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
 
-  addTask: (task: Task) => void;
-  updateTask: (id: string, task: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
+  addTask: (task: Task) => Promise<void>;
+  updateTask: (id: string, task: Partial<Task>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
   
-  // Quick setup with dummy data action.
-  loadDummyData: () => void;
-  clearSchedule: () => void;
+  clearSchedule: () => Promise<void>;
 }
 
-export const useStore = create<AppState>()(
-  persist(
-    (set) => ({
-      profile: null,
-      companies: [],
-      projects: [],
-      tasks: [],
+export const useStore = create<AppState>()((set, get) => ({
+  profile: null,
+  companies: [],
+  projects: [],
+  tasks: [],
+  loading: true,
 
-      setProfile: (profile) => set({ profile }),
-
-      addCompany: (company) => set((state) => ({ companies: [...state.companies, company] })),
-      updateCompany: (id, updatedFields) => set((state) => ({
-        companies: state.companies.map(c => c.id === id ? { ...c, ...updatedFields } : c)
-      })),
-      deleteCompany: (id) => set((state) => ({
-        companies: state.companies.filter(c => c.id !== id),
-        projects: state.projects.filter(p => p.companyId !== id),
-        tasks: state.tasks.filter(t => state.projects.find(p => p.id === t.projectId)?.companyId !== id)
-      })),
-
-      addProject: (project) => set((state) => ({ projects: [...state.projects, project] })),
-      updateProject: (id, updatedFields) => set((state) => ({
-        projects: state.projects.map(p => p.id === id ? { ...p, ...updatedFields } : p)
-      })),
-      deleteProject: (id) => set((state) => ({
-        projects: state.projects.filter(p => p.id !== id),
-        tasks: state.tasks.filter(t => t.projectId !== id)
-      })),
-
-      addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
-      updateTask: (id, updatedFields) => set((state) => ({
-        tasks: state.tasks.map(t => t.id === id ? { ...t, ...updatedFields } : t)
-      })),
-      deleteTask: (id) => set((state) => ({
-        tasks: state.tasks.filter(t => t.id !== id)
-      })),
-
-      clearSchedule: () => set((state) => ({
-        tasks: state.tasks.map(t => t.status === 'Scheduled' ? { ...t, status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined } : t)
-      })),
-
-      loadDummyData: () => set({
-        profile: {
-          name: 'Freelancer',
-          type: 'Consultant',
-          weeklyHoursAvailable: 60,
-          workDays: [1, 2, 3, 4, 5], // Mon-Fri
-          dailyAvailability: { start: '08:00', end: '18:00' },
-          maxHoursPerDay: 8,
-          preferredBlocks: ['Morning', 'Afternoon'],
-          lunchTime: { start: '13:00', durationMinutes: 60 },
-          customBreaks: [
-            { id: 'b1', start: '10:30', durationMinutes: 15 },
-            { id: 'b2', start: '16:00', durationMinutes: 15 }
-          ]
-        },
-        companies: [
-          { id: 'c1', name: 'Entretedigital1', description: 'Digital Marketing rules', color: '#3b82f6', status: 'Active', priority: 'High' }
-        ],
-        projects: [
-          { id: 'p1', companyId: 'c1', name: 'Natx 404', status: 'Active', startDate: new Date().toISOString() },
-          { id: 'p2', companyId: 'c1', name: '33 North', status: 'New', startDate: new Date().toISOString() }
-        ],
-        tasks: [
-          { id: 't1', projectId: 'p1', name: 'Desarrollo de features', type: 'Deep Work', priority: 'High', estimatedDuration: 4, energyLevel: 'High', notes: '', status: 'Todo' },
-          { id: 't2', projectId: 'p1', name: 'Bugs críticos', type: 'Deep Work', priority: 'High', estimatedDuration: 3, energyLevel: 'High', notes: '', status: 'Todo' },
-          { id: 't3', projectId: 'p1', name: 'QA', type: 'QA/Testing', priority: 'High', estimatedDuration: 2, energyLevel: 'Low', notes: '', status: 'Todo' },
-          { id: 't4', projectId: 'p2', name: 'Setup inicial', type: 'Deep Work', priority: 'High', estimatedDuration: 4, energyLevel: 'High', notes: '', status: 'Todo' },
-          { id: 't5', projectId: 'p2', name: 'Roadmap', type: 'Administrative', priority: 'High', estimatedDuration: 2, energyLevel: 'Medium', notes: '', status: 'Todo' },
-          { id: 't6', projectId: 'p2', name: 'Reunión cliente', type: 'Meetings', priority: 'Medium', estimatedDuration: 1, energyLevel: 'Medium', notes: '', status: 'Todo' }
-        ]
-      })
-    }),
-    {
-      name: 'freelance-planner-storage',
+  fetchData: async () => {
+    set({ loading: true });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      set({ loading: false });
+      return;
     }
-  )
-);
+
+    const [profRes, compRes, projRes, taskRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('companies').select('*').eq('user_id', user.id),
+      supabase.from('projects').select('*').eq('user_id', user.id),
+      supabase.from('tasks').select('*').eq('user_id', user.id)
+    ]);
+
+    const projects = (projRes.data || []).map(p => ({ ...p, companyId: p.company_id }));
+    const tasks = (taskRes.data || []).map(t => ({ ...t, projectId: t.project_id }));
+
+    set({ 
+      profile: profRes.data as UserProfile, 
+      companies: compRes.data || [], 
+      projects: projects,
+      tasks: tasks,
+      loading: false 
+    });
+  },
+
+  setProfile: async (profile) => {
+    set({ profile });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('profiles').update(profile).eq('id', user.id);
+  },
+
+  addCompany: async (company) => {
+    set((state) => ({ companies: [...state.companies, company] }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) await supabase.from('companies').insert({ ...company, user_id: user.id });
+  },
+
+  updateCompany: async (id, updatedFields) => {
+    set((state) => ({ companies: state.companies.map(c => c.id === id ? { ...c, ...updatedFields } : c) }));
+    await supabase.from('companies').update(updatedFields).eq('id', id);
+  },
+
+  deleteCompany: async (id) => {
+    set((state) => ({
+      companies: state.companies.filter(c => c.id !== id),
+      projects: state.projects.filter(p => p.companyId !== id),
+      tasks: state.tasks.filter(t => state.projects.find(p => p.id === t.projectId)?.companyId !== id)
+    }));
+    await supabase.from('companies').delete().eq('id', id);
+  },
+
+  addProject: async (project) => {
+    set((state) => ({ projects: [...state.projects, project] }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const dbProject = { ...project, user_id: user.id, company_id: project.companyId };
+      delete (dbProject as any).companyId;
+      await supabase.from('projects').insert(dbProject);
+    }
+  },
+
+  updateProject: async (id, updatedFields) => {
+    set((state) => ({ projects: state.projects.map(p => p.id === id ? { ...p, ...updatedFields } : p) }));
+    const dbFields = { ...updatedFields } as any;
+    if (dbFields.companyId) {
+       dbFields.company_id = dbFields.companyId;
+       delete dbFields.companyId;
+    }
+    await supabase.from('projects').update(dbFields).eq('id', id);
+  },
+
+  deleteProject: async (id) => {
+    set((state) => ({
+      projects: state.projects.filter(p => p.id !== id),
+      tasks: state.tasks.filter(t => t.projectId !== id)
+    }));
+    await supabase.from('projects').delete().eq('id', id);
+  },
+
+  addTask: async (task) => {
+    set((state) => ({ tasks: [...state.tasks, task] }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const dbTask = { ...task, user_id: user.id, project_id: task.projectId };
+      delete (dbTask as any).projectId;
+      await supabase.from('tasks').insert(dbTask);
+    }
+  },
+
+  updateTask: async (id, updatedFields) => {
+    set((state) => ({ tasks: state.tasks.map(t => t.id === id ? { ...t, ...updatedFields } : t) }));
+    const dbFields = { ...updatedFields } as any;
+    if (dbFields.projectId) {
+       dbFields.project_id = dbFields.projectId;
+       delete dbFields.projectId;
+    }
+    await supabase.from('tasks').update(dbFields).eq('id', id);
+  },
+
+  deleteTask: async (id) => {
+    set((state) => ({ tasks: state.tasks.filter(t => t.id !== id) }));
+    await supabase.from('tasks').delete().eq('id', id);
+  },
+
+  clearSchedule: async () => {
+    set((state) => ({
+      tasks: state.tasks.map(t => t.status === 'Scheduled' ? { ...t, status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined } : t)
+    }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('tasks')
+        .update({ status: 'Todo', scheduledStart: null, scheduledEnd: null })
+        .eq('user_id', user.id)
+        .eq('status', 'Scheduled');
+    }
+  }
+}));

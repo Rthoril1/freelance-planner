@@ -1,5 +1,6 @@
-import { addDays, setHours, setMinutes, startOfWeek } from 'date-fns';
+import { addDays, setHours, setMinutes, startOfWeek, format } from 'date-fns';
 import { Task, UserProfile } from '@/types';
+import { generateId } from './utils';
 
 /**
  * Automagically schedules unassigned tasks into the user's available time blocks.
@@ -14,28 +15,40 @@ export function autoScheduleTasks(
   const priorityWeight = { High: 3, Medium: 2, Low: 1 };
   const energyWeight = { High: 3, Medium: 2, Low: 1 };
   
-  // Sort tasks in-place clone
+  // 1. Sort the base unassigned tasks by priority/energy first
   const sortedTasks = [...unassignedTasks].sort((a, b) => {
     if (priorityWeight[a.priority] !== priorityWeight[b.priority]) {
-      return priorityWeight[b.priority] - priorityWeight[a.priority]; // Descending priority
+      return priorityWeight[b.priority] - priorityWeight[a.priority];
     }
-    // Deep Work / High Energy first
-    return energyWeight[b.energyLevel] - energyWeight[a.energyLevel]; // Descending energy
+    return energyWeight[b.energyLevel] - energyWeight[a.energyLevel];
+  });
+
+  // 2. Expand recurring tasks into instances
+  const taskInstances: Task[] = [];
+  sortedTasks.forEach(task => {
+    const timesPerDay = task.frequency?.timesPerDay || 1;
+    const daysPerWeek = task.frequency?.daysPerWeek || 1;
+    
+    if (timesPerDay === 1 && daysPerWeek === 1) {
+      taskInstances.push(task);
+    } else {
+      for (let i = 0; i < daysPerWeek; i++) {
+        for (let j = 0; j < timesPerDay; j++) {
+           taskInstances.push({
+             ...task,
+             id: generateId(),
+             status: 'Scheduled'
+           });
+        }
+      }
+    }
   });
 
   const scheduledTasks: Task[] = [];
-  
-  // Get the Monday of the current week as the baseline
   const weekStart = startOfWeek(startDate, { weekStartsOn: 1 }); 
-
-  // Parse preferred daily start hour (e.g., "08:30" -> 8, "09:00" -> 9)
   const dayStartHour = parseInt(profile.dailyAvailability.start.split(':')[0], 10) || 9;
   const maxHrs = profile.maxHoursPerDay || 8;
 
-  let currentTaskIndex = 0;
-  
-  // profile.workDays is an array from 0 to 6 representing Sunday to Saturday
-  // We want to sort it so Monday (1) comes first, up to Sunday (0=7 in our relative math)
   const sortedDays = [...profile.workDays].sort((a, b) => {
     const adjA = a === 0 ? 7 : a;
     const adjB = b === 0 ? 7 : b;
@@ -43,27 +56,31 @@ export function autoScheduleTasks(
   });
 
   for (const dayOfWeek of sortedDays) {
-    if (currentTaskIndex >= sortedTasks.length) break;
-
     const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1; 
     let currentDayDate = addDays(weekStart, daysToAdd);
-    
     let hoursAssignedToday = 0;
     let currentHour = dayStartHour;
+    
+    for (let i = 0; i < taskInstances.length; i++) {
+      const task = taskInstances[i];
+      // Skip if already scheduled
+      if (scheduledTasks.find(s => s.id === task.id)) continue;
 
-    while (hoursAssignedToday < maxHrs && currentTaskIndex < sortedTasks.length) {
-      const task = sortedTasks[currentTaskIndex];
+      // To check frequency for the SAME task name/type (since IDs are now unique)
+      const instancesToday = scheduledTasks.filter(s => 
+        s.name === task.name && 
+        s.projectId === task.projectId &&
+        s.scheduledStart?.startsWith(format(currentDayDate, 'yyyy-MM-dd'))
+      ).length;
+      const maxToday = task.frequency?.timesPerDay || 1;
       
-      // Check if task fits in remaining daily hours
+      if (instancesToday >= maxToday) continue; 
+
       if (hoursAssignedToday + task.estimatedDuration <= maxHrs) {
-        
-        // Schedule it
         const start = setMinutes(setHours(currentDayDate, currentHour), 0);
-        // We handle half hours if duration is e.g. 1.5, we convert to hours/minutes
         const durationMins = task.estimatedDuration * 60;
         const endHour = currentHour + Math.floor(durationMins / 60);
         const endMins = durationMins % 60;
-        
         const end = setMinutes(setHours(currentDayDate, endHour), endMins);
         
         scheduledTasks.push({
@@ -74,17 +91,10 @@ export function autoScheduleTasks(
         });
         
         hoursAssignedToday += task.estimatedDuration;
-        
-        // Update current hour tracking (simplistic, assumes exact hour boundaries generally)
         currentHour = endHour + (endMins / 60);
-        currentTaskIndex++;
-      } else {
-        // Move to next day if it doesn't fit
-        break; 
       }
     }
   }
 
-  // Whatever tasks are assigned get returned, the caller needs to update the store with them.
   return scheduledTasks;
 }

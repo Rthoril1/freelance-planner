@@ -87,6 +87,7 @@ create table public.tasks (
   "scheduledStart" timestamp with time zone,
   "scheduledEnd" timestamp with time zone,
   "platformId" text,
+  frequency jsonb,
   "createdAt" timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

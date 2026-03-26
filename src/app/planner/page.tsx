@@ -20,7 +20,7 @@ function DroppableColumn({ id, children }: { id: string, children: React.ReactNo
   );
 }
 
-function SortableTaskCard({ task, companyColor, companyName, onUnschedule }: { task: Task, companyColor: string, companyName: string, onUnschedule?: () => void }) {
+function SortableTaskCard({ task, companyColor, companyName, projectName, onUnschedule }: { task: Task, companyColor: string, companyName: string, projectName: string, onUnschedule?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1, zIndex: isDragging ? 50 : 1 };
   
@@ -60,6 +60,9 @@ function SortableTaskCard({ task, companyColor, companyName, onUnschedule }: { t
               </span>
             )}
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase tracking-wider border shrink-0" style={{ backgroundColor: companyColor + '10', color: companyColor, borderColor: companyColor + '30' }}>{companyName}</span>
+            <span className="text-[10px] font-medium text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded italic">
+              {projectName}
+            </span>
             <span className="text-xs font-mono font-medium bg-muted px-1.5 py-0.5 rounded ml-auto">{task.estimatedDuration}h</span>
           </div>
         </div>
@@ -82,11 +85,15 @@ export default function PlannerPage() {
     return addDays(weekStart, rDiff);
   });
 
-  const getCompanyInfo = (taskId: string) => {
+  const getTaskInfo = (taskId: string) => {
     const t = tasks.find(x => x.id === taskId);
     const p = projects.find(x => x.id === t?.projectId);
     const c = companies.find(x => x.id === p?.companyId);
-    return { name: c?.name || 'Unknown', color: c?.color || 'gray' };
+    return { 
+      companyName: c?.name || 'Unknown', 
+      companyColor: c?.color || 'gray',
+      projectName: p?.name || 'No Project'
+    };
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -118,12 +125,33 @@ export default function PlannerPage() {
     }
   };
 
-  const runAutoSchedule = () => {
+  const runAutoSchedule = async () => {
     const unassigned = tasks.filter(t => t.status === 'Todo');
     const scheduled = autoScheduleTasks(unassigned, profile, new Date());
-    scheduled.forEach(t => {
-      updateTask(t.id, t);
-    });
+    
+    // We need to keep track of which original unassigned tasks were "processed" 
+    // to remove them from the backlog (queue) once their clones are created.
+    const processedOrigIds = new Set<string>();
+
+    for (const t of scheduled) {
+      // If the ID is NOT one of the unassigned tasks, it means it's a new instance
+      const isNewInstance = !unassigned.some(u => u.id === t.id);
+      
+      if (isNewInstance) {
+        await useStore.getState().addTask(t);
+        // Find which original task matches this instance (by name/project)
+        const matchedOrig = unassigned.find(u => u.name === t.name && u.projectId === t.projectId);
+        if (matchedOrig) processedOrigIds.add(matchedOrig.id);
+      } else {
+        await updateTask(t.id, t);
+        processedOrigIds.add(t.id);
+      }
+    }
+
+    // Delete the original templates from the queue now that they are scheduled
+    for (const id of Array.from(processedOrigIds)) {
+      await useStore.getState().deleteTask(id);
+    }
   };
 
   const unassignedTasks = tasks.filter(t => t.status === 'Todo');
@@ -134,7 +162,21 @@ export default function PlannerPage() {
         <div className="flex items-center justify-between flex-shrink-0 mb-6">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Weekly Planner</h2>
-            <p className="text-muted-foreground mt-1 text-sm">Organize your single availability across all your companies.</p>
+            <div className="flex items-center gap-4 mt-2">
+              <p className="text-muted-foreground text-sm">Organize availability across companies.</p>
+              {profile.weeklyHoursAvailable && (
+                <div className="flex items-center gap-2 bg-card border border-border px-3 py-1 rounded-full shadow-sm">
+                  <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${(tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) > profile.weeklyHoursAvailable) ? 'bg-destructive' : 'bg-emerald-500'}`} 
+                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
+                    />
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-tight ${tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                    {tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0)} / {profile.weeklyHoursAvailable}h Capacity
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <button 
@@ -156,18 +198,27 @@ export default function PlannerPage() {
           <div className="w-72 flex-shrink-0 flex flex-col bg-card/40 border border-border rounded-xl shadow-inner relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-muted to-border rounded-t-xl" />
             <div className="p-5 border-b border-border/50 bg-card/60 rounded-t-xl">
-              <h3 className="font-semibold text-lg flex items-center justify-between">
-                Backlog
-                <span className="bg-muted text-muted-foreground text-xs px-2 py-0.5 rounded-full">{unassignedTasks.length}</span>
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  Backlog
+                  <span className="bg-muted text-muted-foreground text-xs px-2 py-0.5 rounded-full">{unassignedTasks.length}</span>
+                </h3>
+                {profile.weeklyHoursAvailable && (
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold uppercase ${unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                      {unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0)}h / {profile.weeklyHoursAvailable}h
+                    </span>
+                  </div>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground mt-1">Drag into days to assign.</p>
             </div>
             <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
               <SortableContext id="unassigned" items={unassignedTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                 <DroppableColumn id="unassigned">
                   {unassignedTasks.map(task => {
-                    const info = getCompanyInfo(task.id);
-                    return <SortableTaskCard key={task.id} task={task} companyColor={info.color} companyName={info.name} />;
+                    const info = getTaskInfo(task.id);
+                    return <SortableTaskCard key={task.id} task={task} companyColor={info.companyColor} companyName={info.companyName} projectName={info.projectName} />;
                   })}
                   {unassignedTasks.length === 0 && (
                     <div className="h-full flex items-center justify-center border-2 border-dashed border-border/60 rounded-xl bg-card/30">
@@ -229,15 +280,16 @@ export default function PlannerPage() {
                   <div className="flex-1 p-3 overflow-y-auto custom-scrollbar bg-muted/10 transition-colors hover:bg-muted/30">
                     <SortableContext id={dayStr} items={dayTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                       <DroppableColumn id={dayStr}>
-                        {timelineItems.map(item => {
+                         {timelineItems.map(item => {
                           if (item.type === 'task') {
-                            const info = getCompanyInfo(item.task.id);
+                            const info = getTaskInfo(item.task.id);
                             return (
                               <SortableTaskCard 
                                 key={item.id} 
                                 task={item.task} 
-                                companyColor={info.color} 
-                                companyName={info.name} 
+                                companyColor={info.companyColor} 
+                                companyName={info.companyName} 
+                                projectName={info.projectName}
                                 onUnschedule={() => updateTask(item.task.id, { status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined })}
                               />
                             );

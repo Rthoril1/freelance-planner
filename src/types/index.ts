@@ -5,6 +5,7 @@ export type EnergyLevel = 'High' | 'Medium' | 'Low';
 export interface UserProfile {
   name: string;
   type: string; // e.g., 'Freelancer'
+  avatarUrl?: string; // Added
   weeklyHoursAvailable: number;
   workDays: number[]; // 0 = Sunday, 1 = Monday, etc.
   dailyAvailability: { start: string; end: string }; // "08:00" to "18:00"
@@ -46,4 +47,8 @@ export interface Task {
   scheduledStart?: string; // ISO datetime if scheduled
   scheduledEnd?: string; // ISO datetime if scheduled
   platformId?: string; // Links task to generic platform templates
+  frequency?: {
+    timesPerDay: number;
+    daysPerWeek: number;
+  };
 }

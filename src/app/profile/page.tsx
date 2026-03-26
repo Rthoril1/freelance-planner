@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { User, Clock, CalendarDays, Settings, Save, CheckCircle, Coffee, Plus, Trash2 } from 'lucide-react';
+import { User, Clock, CalendarDays, Settings, Save, CheckCircle, Coffee, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { UserProfile } from '@/types';
 
 const DAYS_OF_WEEK = [
@@ -18,7 +18,6 @@ const DAYS_OF_WEEK = [
 export default function ProfilePage() {
   const profile = useStore((state) => state.profile);
   const setProfile = useStore((state) => state.setProfile);
-  const loadDummyData = useStore((state) => state.loadDummyData);
 
   const [mounted, setMounted] = useState(false);
   const [formData, setFormData] = useState<UserProfile | null>(null);
@@ -26,16 +25,29 @@ export default function ProfilePage() {
 
   useEffect(() => {
     setMounted(true);
-    if (!profile) {
-      loadDummyData();
-    }
-  }, [profile, loadDummyData]);
+  }, []);
 
   useEffect(() => {
     if (profile && !formData) {
       setFormData(profile);
     }
   }, [profile, formData]);
+
+  // Sync Maximum Daily Hours when Start/End times change
+  useEffect(() => {
+    if (!formData) return;
+    
+    const [startH, startM] = formData.dailyAvailability.start.split(':').map(Number);
+    const [endH, endM] = formData.dailyAvailability.end.split(':').map(Number);
+    
+    const diffMins = (endH * 60 + endM) - (startH * 60 + startM);
+    const grossHours = Math.max(0, diffMins / 60);
+    
+    // Only update if it's actually different to avoid infinite loops or jitter
+    if (grossHours > 0 && formData.maxHoursPerDay !== grossHours) {
+      setFormData(prev => prev ? ({ ...prev, maxHoursPerDay: grossHours }) : null);
+    }
+  }, [formData?.dailyAvailability.start, formData?.dailyAvailability.end, formData?.maxHoursPerDay]);
 
   if (!mounted || !formData) return null;
 
@@ -87,6 +99,69 @@ export default function ProfilePage() {
       };
     });
   };
+
+  const calculateCapacityWarning = () => {
+    if (!formData) return null;
+    const daysWorking = formData.workDays.length;
+    if (daysWorking === 0) return 'You have no working days selected.';
+    
+    const [startH, startM] = (formData.dailyAvailability?.start || '09:00').split(':').map(Number);
+    const [endH, endM] = (formData.dailyAvailability?.end || '17:00').split(':').map(Number);
+    
+    let rawMins = (endH * 60 + endM) - (startH * 60 + startM);
+    if (rawMins <= 0) rawMins = 0;
+    
+    const lunchMins = formData.lunchTime?.durationMinutes || 0;
+    const breakMins = (formData.customBreaks || []).reduce((acc, b) => acc + (b.durationMinutes || 0), 0);
+    const totalBreaksHours = (lunchMins + breakMins) / 60;
+    
+    const netDailyMins = Math.max(0, rawMins - lunchMins - breakMins);
+    const netDailyHours = netDailyMins / 60;
+    const maxAllowedDaily = formData.maxHoursPerDay || 24;
+    
+    const actualDailyHours = Math.min(netDailyHours, maxAllowedDaily);
+    const netWeeklyCapacity = actualDailyHours * daysWorking;
+    
+    if (netWeeklyCapacity < formData.weeklyHoursAvailable) {
+      const requiredNetDailyHours = formData.weeklyHoursAvailable / daysWorking;
+      
+      if (requiredNetDailyHours > maxAllowedDaily) {
+        return `Unreachable Goal: Your schedule caps at ${netWeeklyCapacity.toFixed(1)}h/week. To reach ${formData.weeklyHoursAvailable}h, you must either add more working days or increase your Maximum Daily Hours (currently ${maxAllowedDaily}h/day).`;
+      } else {
+        const requiredGrossDailyHours = requiredNetDailyHours + totalBreaksHours;
+        let newStartH = startH;
+        let newStartM = startM;
+        let newEndMins = (startH * 60 + startM) + (requiredGrossDailyHours * 60);
+        
+        if (newEndMins > 24 * 60) {
+           newEndMins = 24 * 60;
+           const newStartMins = newEndMins - (requiredGrossDailyHours * 60);
+           newStartH = Math.max(0, Math.floor(newStartMins / 60));
+           newStartM = Math.round(Math.max(0, newStartMins % 60));
+        }
+        
+        const endHCalc = Math.floor(newEndMins / 60);
+        const endMCalc = Math.round(newEndMins % 60);
+
+        const formatTime = (h: number, m: number) => {
+          if (h >= 24) h = 23; 
+          if (h < 0) h = 0;
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const displayH = h % 12 || 12;
+          return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+        };
+
+        const suggestedStart = formatTime(newStartH, newStartM);
+        const suggestedEnd = formatTime(endHCalc === 24 ? 23 : endHCalc, endHCalc === 24 ? 59 : endMCalc);
+
+        return `Capacity Warning: You can only reach ${netWeeklyCapacity.toFixed(1)}h/week with these settings. To hit ${formData.weeklyHoursAvailable}h in ${daysWorking} days (including breaks), try working from ${suggestedStart} to ${suggestedEnd}.`;
+      }
+    }
+    
+    return null;
+  };
+
+  const warningMessage = calculateCapacityWarning();
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6 overflow-y-auto w-full">
@@ -140,6 +215,62 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* Schedule Breakdown Summary */}
+          {formData.workDays.length > 0 && (
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-6 shadow-inner">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center space-x-4">
+                  <div className="p-3 bg-primary/10 rounded-lg">
+                    <Clock className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Current Schedule Reality</p>
+                    <h4 className="text-xl font-bold text-white">
+                      {((() => {
+                        const [sH, sM] = (formData.dailyAvailability?.start || '09:00').split(':').map(Number);
+                        const [eH, eM] = (formData.dailyAvailability?.end || '17:00').split(':').map(Number);
+                        const raw = (eH * 60 + eM) - (sH * 60 + sM);
+                        const l = formData.lunchTime?.durationMinutes || 0;
+                        const b = (formData.customBreaks || []).reduce((acc, br) => acc + (br.durationMinutes || 0), 0);
+                        const netDaily = Math.max(0, (raw - l - b) / 60);
+                        const capDaily = Math.min(netDaily, formData.maxHoursPerDay || 24);
+                        return capDaily * formData.workDays.length;
+                      })()).toFixed(1)} <span className="text-sm font-normal text-muted-foreground">hours / week</span>
+                    </h4>
+                  </div>
+                </div>
+                
+                <div className="h-px md:h-8 md:w-px bg-border/50" />
+                
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Daily Net</p>
+                    <p className="text-sm font-medium text-slate-200">
+                      {((() => {
+                        const [sH, sM] = (formData.dailyAvailability?.start || '09:00').split(':').map(Number);
+                        const [eH, eM] = (formData.dailyAvailability?.end || '17:00').split(':').map(Number);
+                        const raw = (eH * 60 + eM) - (sH * 60 + sM);
+                        const l = formData.lunchTime?.durationMinutes || 0;
+                        const b = (formData.customBreaks || []).reduce((acc, br) => acc + (br.durationMinutes || 0), 0);
+                        return Math.max(0, (raw - l - b) / 60);
+                      })()).toFixed(1)}h
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Days</p>
+                    <p className="text-sm font-medium text-slate-200">{formData.workDays.length} days</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Rest Time</p>
+                    <p className="text-sm font-medium text-slate-200">
+                      {((formData.lunchTime?.durationMinutes || 0) + (formData.customBreaks || []).reduce((acc, br) => acc + (br.durationMinutes || 0), 0))} min
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Schedule Section */}
           <div className="rounded-xl border border-border/50 bg-card p-6 shadow-sm">
             <div className="mb-6 flex items-center space-x-2 text-primary">
@@ -164,6 +295,12 @@ export default function ProfilePage() {
                   <p className="text-[13px] text-muted-foreground">
                     Total hours you plan to work per week across all clients.
                   </p>
+                  {warningMessage && (
+                    <div className="flex items-start mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-md animate-in fade-in">
+                      <AlertCircle className="w-5 h-5 text-amber-500 mr-2 shrink-0 mt-0.5" />
+                      <p className="text-[13px] font-medium text-amber-500 leading-snug">{warningMessage}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
