@@ -7,6 +7,16 @@ import { TaskType, Priority, EnergyLevel } from '@/types';
 
 import { PRESET_PLATFORMS, PresetAction } from '@/lib/constants';
 
+const DAYS_OF_WEEK = [
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+  { id: 0, label: 'Sun' },
+];
+
 export default function TasksPage() {
   const { tasks, projects, companies, addTask, deleteTask, profile } = useStore();
   const [newTask, setNewTask] = useState({
@@ -17,7 +27,7 @@ export default function TasksPage() {
     estimatedDuration: 1,
     energyLevel: 'Medium' as EnergyLevel,
     notes: '',
-    frequency: { timesPerDay: 1, daysPerWeek: 1 }
+    frequency: { timesPerDay: 1, daysOfWeek: [1, 2, 3, 4, 5] }
   });
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -219,13 +229,26 @@ export default function TasksPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Days per Week</label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Days of Week</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {[1, 2, 3, 4, 5, 6, 7].map(v => (
-                    <button key={v} type="button" 
-                      onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, daysPerWeek: v }}))}
-                      className={`px-4 py-1.5 text-xs rounded-md border transition-all ${newTask.frequency?.daysPerWeek === v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border/50'}`}>
-                      {v} days
+                  {DAYS_OF_WEEK.map((day) => (
+                    <button
+                      key={day.id}
+                      type="button"
+                      onClick={() => {
+                        const currentDays = newTask.frequency?.daysOfWeek || [];
+                        const newDays = currentDays.includes(day.id)
+                          ? currentDays.filter(d => d !== day.id)
+                          : [...currentDays, day.id];
+                        setNewTask(prev => ({ ...prev, frequency: { ...prev.frequency!, daysOfWeek: newDays } }));
+                      }}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+                        newTask.frequency?.daysOfWeek?.includes(day.id)
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/30'
+                          : 'bg-background hover:bg-muted border-border/50 text-muted-foreground'
+                      }`}
+                    >
+                      {day.label}
                     </button>
                   ))}
                 </div>
@@ -237,13 +260,13 @@ export default function TasksPage() {
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <span className="text-lg font-bold text-primary">
-                    {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration}h
+                    {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration}h
                   </span>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-primary/80 uppercase tracking-wider">Total Weekly Impact</p>
                   <p className="text-[10px] text-muted-foreground italic">
-                    {newTask.estimatedDuration}h × {newTask.frequency?.timesPerDay}x/d × {newTask.frequency?.daysPerWeek}d
+                    {newTask.estimatedDuration}h × {newTask.frequency?.timesPerDay}x/d · {newTask.frequency?.daysOfWeek?.map(d => DAYS_OF_WEEK.find(x => x.id === d)?.label).filter(Boolean).join(', ')}
                   </p>
                 </div>
               </div>
@@ -251,8 +274,8 @@ export default function TasksPage() {
               {profile?.weeklyHoursAvailable && (
                 <div className="text-right">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase">Capacity Check</p>
-                  <p className={`text-xs font-bold ${(tasks.reduce((acc, t) => acc + t.estimatedDuration, 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration)) > (profile.weeklyHoursAvailable || 60) ? 'text-destructive' : 'text-emerald-500'}`}>
-                    {tasks.reduce((acc, t) => acc + t.estimatedDuration, 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration)} / {profile.weeklyHoursAvailable}h
+                  <p className={`text-xs font-bold ${(tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration)) > (profile.weeklyHoursAvailable || 60) ? 'text-destructive' : 'text-emerald-500'}`}>
+                    {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration)} / {profile.weeklyHoursAvailable}h
                   </p>
                 </div>
               )}
@@ -280,21 +303,21 @@ export default function TasksPage() {
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Total Task Load</p>
-                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-primary'}`}>
-                        {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0)}h
+                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-primary'}`}>
+                        {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0)}h
                       </p>
                     </div>
                     <div className="h-8 w-px bg-border/50" />
                     <div className="text-right">
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Remaining</p>
-                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
-                        {Math.max(0, profile.weeklyHoursAvailable - tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0))}h / {profile.weeklyHoursAvailable}h
+                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                        {Math.max(0, profile.weeklyHoursAvailable - tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0))}h / {profile.weeklyHoursAvailable}h
                       </p>
                     </div>
                   </div>
                   <div className="w-full min-w-[180px] h-1.5 bg-muted rounded-full overflow-hidden mt-1">
-                    <div className={`h-full rounded-full ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'bg-destructive' : 'bg-primary'}`} 
-                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
+                    <div className={`h-full rounded-full ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'bg-destructive' : 'bg-primary'}`} 
+                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
                     />
                   </div>
                 </div>
@@ -324,16 +347,17 @@ export default function TasksPage() {
                       )}
                       <span className="font-medium bg-secondary text-secondary-foreground px-1 py-0.5 rounded border border-border/50 truncate max-w-[90px]">{project?.name}</span>
                       <span className="font-mono bg-muted px-1 py-0.5 rounded shrink-0">{task.estimatedDuration}h</span>
+                      {task.frequency && (
+                         <span className="font-medium bg-indigo-500/10 text-indigo-400 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0">
+                           {task.frequency.timesPerDay}x/d · {task.frequency.daysOfWeek?.map(d => DAYS_OF_WEEK.find(x => x.id === d)?.label).filter(Boolean).join(', ')}
+                         </span>
+                      )}
                       <span className={task.priority === 'High' ? 'text-destructive font-semibold flex items-center gap-1 bg-destructive/10 px-1 py-0.5 rounded shrink-0' : 'bg-muted px-1 py-0.5 rounded shrink-0'}>
                         {task.priority === 'High' && <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />}
                         {task.priority}
                       </span>
                       <span className="bg-muted px-1 py-0.5 rounded truncate">{task.type.replace('/Testing','')}</span>
-                      {task.frequency && (task.frequency.timesPerDay > 1 || task.frequency.daysPerWeek > 1) && (
-                        <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded font-bold">
-                          {task.frequency.timesPerDay}x/d • {task.frequency.daysPerWeek}d
-                        </span>
-                      )}
+
                     </div>
                   </div>
                   <div className="pl-3 flex items-center justify-between border-t border-border/40 pt-2 mt-auto">

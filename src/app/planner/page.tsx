@@ -10,6 +10,10 @@ import { addDays, format, startOfWeek } from 'date-fns';
 import { Wand2, GripVertical, X } from 'lucide-react';
 import { PRESET_PLATFORMS } from '@/lib/constants';
 
+const DAYS_OF_WEEK_LABELS: Record<number, string> = {
+  1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 0: 'Sun'
+};
+
 function DroppableColumn({ id, children }: { id: string, children: React.ReactNode }) {
   // A wrapper for the droppable area simply utilizing its own sortable context
   const { isOver, setNodeRef } = useDroppable({ id });
@@ -60,10 +64,15 @@ function SortableTaskCard({ task, companyColor, companyName, projectName, onUnsc
               </span>
             )}
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase tracking-wider border shrink-0" style={{ backgroundColor: companyColor + '10', color: companyColor, borderColor: companyColor + '30' }}>{companyName}</span>
-            <span className="text-[10px] font-medium text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded italic">
+            <span className="text-[10px] font-medium text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded italic truncate max-w-[80px]">
               {projectName}
             </span>
-            <span className="text-xs font-mono font-medium bg-muted px-1.5 py-0.5 rounded ml-auto">{task.estimatedDuration}h</span>
+            {task.frequency && (
+              <span className="text-[9px] font-bold bg-indigo-500/10 text-indigo-400 px-1 py-0.5 rounded-sm border border-indigo-500/20 shrink-0">
+                {task.frequency.timesPerDay}x · {task.frequency.daysOfWeek.map(d => DAYS_OF_WEEK_LABELS[d]).join(', ')}
+              </span>
+            )}
+            <span className="text-xs font-mono font-medium bg-muted px-1.5 py-0.5 rounded ml-auto shrink-0">{task.estimatedDuration}h</span>
           </div>
         </div>
       </div>
@@ -167,12 +176,12 @@ export default function PlannerPage() {
               {profile.weeklyHoursAvailable && (
                 <div className="flex items-center gap-2 bg-card border border-border px-3 py-1 rounded-full shadow-sm">
                   <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${(tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) > profile.weeklyHoursAvailable) ? 'bg-destructive' : 'bg-emerald-500'}`} 
-                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
+                    <div className={`h-full rounded-full ${(tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)) : 0), 0) > profile.weeklyHoursAvailable) ? 'bg-destructive' : 'bg-emerald-500'}`} 
+                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)) : 0), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
                     />
                   </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-tight ${tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
-                    {tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)) : 0), 0)} / {profile.weeklyHoursAvailable}h Capacity
+                  <span className={`text-[10px] font-bold uppercase tracking-tight ${tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)) : 0), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                    {tasks.reduce((acc, t) => acc + (t.status === 'Scheduled' ? (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)) : 0), 0)} / {profile.weeklyHoursAvailable}h Capacity
                   </span>
                 </div>
               )}
@@ -205,8 +214,8 @@ export default function PlannerPage() {
                 </h3>
                 {profile.weeklyHoursAvailable && (
                   <div className="text-right">
-                    <span className={`text-[10px] font-bold uppercase ${unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
-                      {unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.timesPerDay || 1) * (t.frequency?.daysPerWeek || 1)), 0)}h / {profile.weeklyHoursAvailable}h
+                    <span className={`text-[10px] font-bold uppercase ${unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                      {unassignedTasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0)}h / {profile.weeklyHoursAvailable}h
                     </span>
                   </div>
                 )}

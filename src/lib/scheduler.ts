@@ -27,21 +27,19 @@ export function autoScheduleTasks(
   const taskInstances: Task[] = [];
   sortedTasks.forEach(task => {
     const timesPerDay = task.frequency?.timesPerDay || 1;
-    const daysPerWeek = task.frequency?.daysPerWeek || 1;
+    const daysOfWeek = task.frequency?.daysOfWeek || [1, 2, 3, 4, 5]; // Default to Mon-Fri if not specified
     
-    if (timesPerDay === 1 && daysPerWeek === 1) {
-      taskInstances.push(task);
-    } else {
-      for (let i = 0; i < daysPerWeek; i++) {
-        for (let j = 0; j < timesPerDay; j++) {
-           taskInstances.push({
-             ...task,
-             id: generateId(),
-             status: 'Scheduled'
-           });
-        }
+    daysOfWeek.forEach(dayIndex => {
+      for (let j = 0; j < timesPerDay; j++) {
+        taskInstances.push({
+          ...task,
+          id: generateId(),
+          status: 'Scheduled',
+          // Temporarily tag which day it SHOULD go to in the notes for easy filtering
+          notes: `${task.notes || ''} [target-day:${dayIndex}]` 
+        });
       }
-    }
+    });
   });
 
   const scheduledTasks: Task[] = [];
@@ -61,21 +59,13 @@ export function autoScheduleTasks(
     let hoursAssignedToday = 0;
     let currentHour = dayStartHour;
     
-    for (let i = 0; i < taskInstances.length; i++) {
-      const task = taskInstances[i];
-      // Skip if already scheduled
-      if (scheduledTasks.find(s => s.id === task.id)) continue;
+    // Only pick tasks that are allowed/targeted for this day
+    const tasksForToday = taskInstances.filter(inst => {
+      const match = inst.notes.match(/\[target-day:(\d+)\]/);
+      return match && parseInt(match[1], 10) === dayOfWeek;
+    });
 
-      // To check frequency for the SAME task name/type (since IDs are now unique)
-      const instancesToday = scheduledTasks.filter(s => 
-        s.name === task.name && 
-        s.projectId === task.projectId &&
-        s.scheduledStart?.startsWith(format(currentDayDate, 'yyyy-MM-dd'))
-      ).length;
-      const maxToday = task.frequency?.timesPerDay || 1;
-      
-      if (instancesToday >= maxToday) continue; 
-
+    for (const task of tasksForToday) {
       if (hoursAssignedToday + task.estimatedDuration <= maxHrs) {
         const start = setMinutes(setHours(currentDayDate, currentHour), 0);
         const durationMins = task.estimatedDuration * 60;
@@ -85,6 +75,7 @@ export function autoScheduleTasks(
         
         scheduledTasks.push({
           ...task,
+          notes: task.notes.replace(/\[target-day:\d+\]/, '').trim(), // Clean up temporary tag
           status: 'Scheduled',
           scheduledStart: start.toISOString(),
           scheduledEnd: end.toISOString()

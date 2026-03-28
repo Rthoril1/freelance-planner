@@ -49,6 +49,6 @@ export interface Task {
   platformId?: string; // Links task to generic platform templates
   frequency?: {
     timesPerDay: number;
-    daysPerWeek: number;
+    daysOfWeek: number[]; // [1, 2, 3...] where 1 = Monday, 0 = Sunday
   };
 }
