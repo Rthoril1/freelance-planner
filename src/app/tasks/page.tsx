@@ -1,20 +1,20 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { generateId } from '@/lib/utils';
 import { TaskType, Priority, EnergyLevel } from '@/types';
 
 import { PRESET_PLATFORMS, PresetAction } from '@/lib/constants';
 
 const DAYS_OF_WEEK = [
-  { id: 1, label: 'Mon' },
-  { id: 2, label: 'Tue' },
-  { id: 3, label: 'Wed' },
-  { id: 4, label: 'Thu' },
-  { id: 5, label: 'Fri' },
-  { id: 6, label: 'Sat' },
-  { id: 0, label: 'Sun' },
+  { id: 1, label: 'Day 1' },
+  { id: 2, label: 'Day 2' },
+  { id: 3, label: 'Day 3' },
+  { id: 4, label: 'Day 4' },
+  { id: 5, label: 'Day 5' },
+  { id: 6, label: 'Day 6' },
+  { id: 7, label: 'Day 7' },
 ];
 
 export default function TasksPage() {
@@ -27,7 +27,7 @@ export default function TasksPage() {
     estimatedDuration: 1,
     energyLevel: 'Medium' as EnergyLevel,
     notes: '',
-    frequency: { timesPerDay: 1, daysOfWeek: [1, 2, 3, 4, 5] }
+    frequency: { timesPerDay: 1, daysPerWeek: 5 }
   });
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -229,26 +229,22 @@ export default function TasksPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Days of Week</label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Days per Week</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {DAYS_OF_WEEK.map((day) => (
+                  {[1, 2, 3, 4, 5, 6, 7].map((num) => (
                     <button
-                      key={day.id}
+                      key={num}
                       type="button"
                       onClick={() => {
-                        const currentDays = newTask.frequency?.daysOfWeek || [];
-                        const newDays = currentDays.includes(day.id)
-                          ? currentDays.filter(d => d !== day.id)
-                          : [...currentDays, day.id];
-                        setNewTask(prev => ({ ...prev, frequency: { ...prev.frequency!, daysOfWeek: newDays } }));
+                        setNewTask(prev => ({ ...prev, frequency: { ...prev.frequency!, daysPerWeek: num } }));
                       }}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-all ${
-                        newTask.frequency?.daysOfWeek?.includes(day.id)
+                      className={`px-4 py-1.5 text-xs font-semibold rounded-md border transition-all ${
+                        newTask.frequency?.daysPerWeek === num
                           ? 'bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/30'
                           : 'bg-background hover:bg-muted border-border/50 text-muted-foreground'
                       }`}
                     >
-                      {day.label}
+                      {num} {num === 1 ? 'Day' : 'Days'}
                     </button>
                   ))}
                 </div>
@@ -260,13 +256,13 @@ export default function TasksPage() {
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <span className="text-lg font-bold text-primary">
-                    {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration}h
+                    {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration}h
                   </span>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-primary/80 uppercase tracking-wider">Total Weekly Impact</p>
                   <p className="text-[10px] text-muted-foreground italic">
-                    {newTask.estimatedDuration}h × {newTask.frequency?.timesPerDay}x/d · {newTask.frequency?.daysOfWeek?.map(d => DAYS_OF_WEEK.find(x => x.id === d)?.label).filter(Boolean).join(', ')}
+                    {newTask.estimatedDuration}h × {newTask.frequency?.timesPerDay}x/d · {newTask.frequency?.daysPerWeek} days/week
                   </p>
                 </div>
               </div>
@@ -274,8 +270,8 @@ export default function TasksPage() {
               {profile?.weeklyHoursAvailable && (
                 <div className="text-right">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase">Capacity Check</p>
-                  <p className={`text-xs font-bold ${(tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration)) > (profile.weeklyHoursAvailable || 60) ? 'text-destructive' : 'text-emerald-500'}`}>
-                    {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) + ((newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysOfWeek?.length || 0) * newTask.estimatedDuration)} / {profile.weeklyHoursAvailable}h
+                  <p className={`text-xs font-bold ${tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                    {tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0)} / {profile.weeklyHoursAvailable}h
                   </p>
                 </div>
               )}
@@ -294,37 +290,32 @@ export default function TasksPage() {
         <div className="w-full lg:w-1/2 xl:w-7/12 flex flex-col h-full overflow-hidden">
           <div className="flex items-center justify-between mb-4 bg-card/60 p-4 border border-border/50 rounded-xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/30 to-transparent" />
-             <div>
-               <h3 className="text-xl font-bold tracking-tight">Tasks Queue</h3>
-               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest opacity-60">Backlog for scheduling</p>
-             </div>
-             {profile?.weeklyHoursAvailable && (
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Total Task Load</p>
-                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-primary'}`}>
-                        {tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0)}h
-                      </p>
-                    </div>
-                    <div className="h-8 w-px bg-border/50" />
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Remaining</p>
-                      <p className={`text-sm font-mono font-bold ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
-                        {Math.max(0, profile.weeklyHoursAvailable - tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0))}h / {profile.weeklyHoursAvailable}h
-                      </p>
-                    </div>
+            <div>
+              <h3 className="text-xl font-bold tracking-tight">Tasks Queue</h3>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest opacity-60">Backlog for scheduling</p>
+            </div>
+            {profile?.weeklyHoursAvailable && (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Total Task Load</p>
+                    <p className={`text-sm font-mono font-bold ${tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-primary'}`}>
+                      {tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0)}h
+                    </p>
                   </div>
-                  <div className="w-full min-w-[180px] h-1.5 bg-muted rounded-full overflow-hidden mt-1">
-                    <div className={`h-full rounded-full ${tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'bg-destructive' : 'bg-primary'}`} 
-                      style={{ width: `${Math.min(100, (tasks.reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysOfWeek?.length || 1) * (t.frequency?.timesPerDay || 1)), 0) / profile.weeklyHoursAvailable) * 100)}%` }} 
-                    />
+                  <div className="h-8 w-px bg-border/50" />
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Remaining</p>
+                    <p className={`text-sm font-mono font-bold ${tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0) > profile.weeklyHoursAvailable ? 'text-destructive' : 'text-emerald-500'}`}>
+                      {Math.max(0, profile.weeklyHoursAvailable - tasks.filter(t => !t.parentTaskId).reduce((acc, t) => acc + (t.estimatedDuration * (t.frequency?.daysPerWeek || 1) * (t.frequency?.timesPerDay || 1)), 0))}h / {profile.weeklyHoursAvailable}h
+                    </p>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3 overflow-y-auto items-start custom-scrollbar pr-2 pb-10 content-start flex-1">
-            {tasks.filter(t => t.status === 'Todo').map(task => {
+            {tasks.filter(t => !t.parentTaskId).map(task => {
               const project = projects.find(p => p.id === task.projectId);
               const company = companies.find(c => c.id === project?.companyId);
               const platform = PRESET_PLATFORMS.find(p => p.id === task.platformId);
@@ -336,9 +327,17 @@ export default function TasksPage() {
                 >
                   <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: uiColor }} />
                   <div className="pl-3 mb-3">
-                    <h4 className="font-semibold text-sm hover:text-primary transition-colors cursor-pointer leading-tight mb-2 line-clamp-2">
-                       {task.name}
-                    </h4>
+                    <div className="flex items-center justify-between mb-2">
+                       <h4 className="font-semibold text-sm hover:text-primary transition-colors cursor-pointer leading-tight line-clamp-2">
+                          {task.name}
+                       </h4>
+                       {task.status === 'Scheduled' && (
+                         <span className="flex items-center gap-1 text-[8px] font-black uppercase tracking-tighter bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 shrink-0">
+                           <CheckCircle2 className="w-2 h-2" />
+                           En Agenda
+                         </span>
+                       )}
+                    </div>
                     <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground items-center">
                       {platform && (
                         <span className="font-medium px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0" style={{ backgroundColor: `${platform.color}15`, color: platform.color }}>
@@ -349,7 +348,7 @@ export default function TasksPage() {
                       <span className="font-mono bg-muted px-1 py-0.5 rounded shrink-0">{task.estimatedDuration}h</span>
                       {task.frequency && (
                          <span className="font-medium bg-indigo-500/10 text-indigo-400 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0">
-                           {task.frequency.timesPerDay}x/d · {task.frequency.daysOfWeek?.map(d => DAYS_OF_WEEK.find(x => x.id === d)?.label).filter(Boolean).join(', ')}
+                           {task.frequency.timesPerDay}x/d · {task.frequency.daysPerWeek} days/week
                          </span>
                       )}
                       <span className={task.priority === 'High' ? 'text-destructive font-semibold flex items-center gap-1 bg-destructive/10 px-1 py-0.5 rounded shrink-0' : 'bg-muted px-1 py-0.5 rounded shrink-0'}>
@@ -360,8 +359,33 @@ export default function TasksPage() {
 
                     </div>
                   </div>
-                  <div className="pl-3 flex items-center justify-between border-t border-border/40 pt-2 mt-auto">
-                    <span className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground">Queue</span>
+                  <div className="pl-3 flex items-center justify-between border-t border-border/40 pt-2 mt-auto gap-2">
+                    <span className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground mr-auto">Queue</span>
+                    
+                    {task.estimatedDuration > 0.5 && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const half = task.estimatedDuration / 2;
+                          // Update current
+                          useStore.getState().updateTask(task.id, { estimatedDuration: half });
+                          // Add new
+                          addTask({ 
+                            ...task, 
+                            id: generateId(), 
+                            name: `${task.name} (Part 2)`,
+                            estimatedDuration: half 
+                          });
+                        }}
+                        className="p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors border border-transparent hover:border-primary/20"
+                        title="Split Task in Two"
+                      >
+                         <svg className="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 11-4.243 4.243 3 3 0 014.243-4.243zm0-11.516a3 3 0 11-4.243-4.243 3 3 0 014.243 4.243z" />
+                         </svg>
+                      </button>
+                    )}
+
                     <button 
                       onClick={() => deleteTask(task.id)}
                       className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors border border-transparent hover:border-destructive/20 opacity-0 group-hover:opacity-100"
@@ -372,12 +396,12 @@ export default function TasksPage() {
                 </div>
               );
             })}
-            {tasks.filter(t => t.status === 'Todo').length === 0 && (
-              <div className="col-span-full py-16 text-center rounded-2xl border-2 border-dashed border-border bg-muted/30">
-                <p className="text-muted-foreground font-medium">Task queue is empty.</p>
-                <p className="text-sm text-muted-foreground mt-1">Add tasks to be scheduled into your weekly planner.</p>
-              </div>
-            )}
+            {tasks.filter(t => !t.parentTaskId).length === 0 && (
+                <div className="col-span-full py-16 text-center rounded-2xl border-2 border-dashed border-border bg-muted/30">
+                  <p className="text-muted-foreground font-medium">Task queue is empty.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Add tasks to be scheduled into your weekly planner.</p>
+                </div>
+              )}
           </div>
         </div>
       </div>

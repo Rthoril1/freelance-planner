@@ -53,8 +53,28 @@ export const useStore = create<AppState>()((set, get) => ({
     const projects = (projRes.data || []).map(p => ({ ...p, companyId: p.company_id }));
     const tasks = (taskRes.data || []).map(t => ({ ...t, projectId: t.project_id }));
 
+    const profile = (profRes.data as UserProfile) || {
+      name: user.user_metadata?.full_name || 'Freelancer',
+      type: 'Freelancer',
+      weeklyHoursAvailable: 40,
+      workDays: [1, 2, 3, 4, 5],
+      dailyAvailability: { start: '09:00', end: '18:00' },
+      maxHoursPerDay: 8,
+      preferredBlocks: ['Morning', 'Afternoon']
+    };
+
+    // Ensure defaults for lunch and breaks if missing
+    if (!profile.lunchTime) {
+      profile.lunchTime = { start: '13:00', durationMinutes: 60 };
+    }
+    if (!profile.customBreaks) {
+      profile.customBreaks = [
+        { id: 'morning-coffee', start: '10:30', durationMinutes: 15 }
+      ];
+    }
+
     set({ 
-      profile: profRes.data as UserProfile, 
+      profile, 
       companies: compRes.data || [], 
       projects: projects,
       tasks: tasks,
@@ -143,15 +163,30 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   clearSchedule: async () => {
-    set((state) => ({
-      tasks: state.tasks.map(t => t.status === 'Scheduled' ? { ...t, status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined } : t)
-    }));
+    const { tasks } = get();
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
+    if (!user) return;
+
+    // 1. Identify tasks to keep (Todo or Scheduled without parentTaskId)
+    // 2. Identify tasks to delete (Scheduled with parentTaskId)
+    const toDelete = tasks.filter(t => t.status === 'Scheduled' && t.parentTaskId);
+    const toReset = tasks.filter(t => t.status === 'Scheduled' && !t.parentTaskId);
+
+    // Update state
+    set((state) => ({
+      tasks: state.tasks
+        .filter(t => !(t.status === 'Scheduled' && t.parentTaskId))
+        .map(t => t.status === 'Scheduled' ? { ...t, status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined } : t)
+    }));
+
+    // Update database
+    if (toDelete.length > 0) {
+      await supabase.from('tasks').delete().in('id', toDelete.map(t => t.id));
+    }
+    if (toReset.length > 0) {
       await supabase.from('tasks')
         .update({ status: 'Todo', scheduledStart: null, scheduledEnd: null })
-        .eq('user_id', user.id)
-        .eq('status', 'Scheduled');
+        .in('id', toReset.map(t => t.id));
     }
   }
 }));

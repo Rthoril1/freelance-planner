@@ -6,13 +6,13 @@ import { User, Clock, CalendarDays, Settings, Save, CheckCircle, Coffee, Plus, T
 import { UserProfile } from '@/types';
 
 const DAYS_OF_WEEK = [
-  { id: 1, label: 'Monday' },
-  { id: 2, label: 'Tuesday' },
-  { id: 3, label: 'Wednesday' },
-  { id: 4, label: 'Thursday' },
-  { id: 5, label: 'Friday' },
-  { id: 6, label: 'Saturday' },
-  { id: 0, label: 'Sunday' },
+  { id: 1, label: 'Day 1' },
+  { id: 2, label: 'Day 2' },
+  { id: 3, label: 'Day 3' },
+  { id: 4, label: 'Day 4' },
+  { id: 5, label: 'Day 5' },
+  { id: 6, label: 'Day 6' },
+  { id: 7, label: 'Day 7' },
 ];
 
 export default function ProfilePage() {
