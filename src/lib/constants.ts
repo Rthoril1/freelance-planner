@@ -179,3 +179,12 @@ export const PRESET_PLATFORMS: PresetPlatform[] = [
     ]
   }
 ];
+export const TASK_TYPES: TaskType[] = [
+  'Deep Work',
+  'Operative',
+  'Administrative',
+  'Meetings',
+  'Creative',
+  'Research',
+  'QA/Testing'
+];

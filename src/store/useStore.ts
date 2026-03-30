@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Company, Project, Task, UserProfile } from '../types';
+import { Company, Project, Task, UserProfile, CustomPlatform } from '../types';
 import { startOfWeek, isBefore, parseISO } from 'date-fns';
 
 interface AppState {
@@ -13,7 +13,12 @@ interface AppState {
   fetchData: () => Promise<void>;
 
   setProfile: (profile: UserProfile) => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   
+  addCustomPlatform: (platform: CustomPlatform) => Promise<void>;
+  updateCustomPlatform: (id: string, platform: Partial<CustomPlatform>) => Promise<void>;
+  deleteCustomPlatform: (id: string) => Promise<void>;
+
   addCompany: (company: Company) => Promise<void>;
   updateCompany: (id: string, company: Partial<Company>) => Promise<void>;
   deleteCompany: (id: string) => Promise<void>;
@@ -57,12 +62,12 @@ export const useStore = create<AppState>()((set, get) => ({
         ...rest, 
         hourlyRate: hourly_rate || 0,
         currencyCode: currency_code || 'USD'
-      };
+      } as Company;
     });
 
     const projects = (projRes.data || []).map(p => {
       const { company_id, user_id, ...rest } = p;
-      return { ...rest, companyId: company_id };
+      return { ...rest, companyId: company_id } as Project;
     });
     
     const tasks = (taskRes.data || []).map(t => {
@@ -71,7 +76,7 @@ export const useStore = create<AppState>()((set, get) => ({
         ...rest, 
         projectId: project_id,
         parentTaskId: parent_task_id
-      };
+      } as Task;
     });
 
     const profile = (profRes.data as UserProfile) || {
@@ -133,19 +138,45 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   setProfile: async (profile) => {
-    // 1. Clean the profile object (ensure integers for DB schema and remove redundant ID)
-    const { id, ...rest } = profile as any;
-    const cleanProfile = {
-      ...rest,
-      weeklyHoursAvailable: Math.round(rest.weeklyHoursAvailable || 40),
-      maxHoursPerDay: Math.round(rest.maxHoursPerDay || 8)
-    };
-
-    set({ profile: { ...profile, ...cleanProfile } });
+    set({ profile });
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     
+    const { id, ...cleanProfile } = profile as any;
     await supabase.from('profiles').update(cleanProfile).eq('id', user.id);
+  },
+
+  updateProfile: async (updates) => {
+    const { profile, setProfile } = get();
+    if (profile) {
+      await setProfile({ ...profile, ...updates });
+    }
+  },
+
+  addCustomPlatform: async (platform) => {
+    const { profile, updateProfile } = get();
+    if (profile) {
+      const platforms = profile.customPlatforms || [];
+      await updateProfile({ customPlatforms: [...platforms, platform] });
+    }
+  },
+
+  updateCustomPlatform: async (id, updatedFields) => {
+    const { profile, updateProfile } = get();
+    if (profile) {
+      const platforms = (profile.customPlatforms || []).map(p => 
+        p.id === id ? { ...p, ...updatedFields } : p
+      );
+      await updateProfile({ customPlatforms: platforms });
+    }
+  },
+
+  deleteCustomPlatform: async (id) => {
+    const { profile, updateProfile } = get();
+    if (profile) {
+      const platforms = (profile.customPlatforms || []).filter(p => p.id !== id);
+      await updateProfile({ customPlatforms: platforms });
+    }
   },
 
   addCompany: async (company) => {

@@ -23,6 +23,8 @@ export interface CustomAction {
   duration: number;
   priority: Priority;
   energyLevel: EnergyLevel;
+  daysPerWeek?: number;
+  timesPerDay?: number;
 }
 
 export interface CustomPlatform {
@@ -31,6 +33,7 @@ export interface CustomPlatform {
   icon: string;
   color: string;
   actions: CustomAction[];
+  isHidden?: boolean;
 }
 
 export interface Company {

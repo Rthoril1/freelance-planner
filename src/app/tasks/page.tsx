@@ -5,7 +5,7 @@ import { useStore } from '@/store/useStore';
 import { Plus, Trash2, CheckCircle2, Zap, LayoutGrid, Timer, Gauge, ShieldCheck, X, MoreVertical, Search, ArrowRight, Activity } from 'lucide-react';
 import { generateId } from '@/lib/utils';
 import { TaskType, Priority, EnergyLevel } from '@/types';
-import { PRESET_PLATFORMS } from '@/lib/constants';
+import { PRESET_PLATFORMS, TASK_TYPES } from '@/lib/constants';
 import { TacticalDropdown } from '@/components/ui/TacticalDropdown';
 import { cn } from '@/lib/utils';
 
@@ -25,10 +25,17 @@ export default function TasksPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
 
-  const displayedPlatforms = [
-    ...PRESET_PLATFORMS.filter(p => !profile?.hiddenPresetIds?.includes(p.id)),
-    ...(profile?.customPlatforms || [])
-  ];
+  const presetPlatforms = PRESET_PLATFORMS.map(p => {
+    const override = profile?.customPlatforms?.find(cp => cp.id === `override-${p.id}`);
+    return override || p;
+  }).filter(p => {
+    const baseId = p.id.replace('override-', '');
+    return !profile?.hiddenPresetIds?.includes(baseId);
+  });
+
+  const purelyCustomPlatforms = (profile?.customPlatforms || []).filter(p => !p.id.startsWith('override-') && !p.isHidden);
+
+  const displayedPlatforms = [...presetPlatforms, ...purelyCustomPlatforms];
 
   const currentPlatform = displayedPlatforms.find(p => p.id === selectedPlatform);
 
@@ -39,7 +46,11 @@ export default function TasksPage() {
       type: action.type,
       priority: action.priority,
       energyLevel: action.energyLevel,
-      estimatedDuration: action.duration
+      estimatedDuration: action.duration,
+      frequency: {
+        timesPerDay: action.timesPerDay || prev.frequency?.timesPerDay || 1,
+        daysPerWeek: action.daysPerWeek || prev.frequency?.daysPerWeek || 5
+      }
     }));
     setTimeout(() => {
       nameInputRef.current?.focus();
@@ -176,42 +187,94 @@ export default function TasksPage() {
                          color: companies.find(c => c.id === p.companyId)?.color
                        }))}
                     />
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                       <TacticalDropdown 
+                          label="Mode"
+                          value={newTask.type}
+                          onChange={(val) => setNewTask({...newTask, type: val as TaskType})}
+                          options={TASK_TYPES.map(t => ({ id: t, name: t }))}
+                       />
+                       <TacticalDropdown 
+                          label="Priority"
+                          value={newTask.priority}
+                          onChange={(val) => setNewTask({...newTask, priority: val as Priority})}
+                          options={['Low', 'Medium', 'High'].map(p => ({ id: p, name: p }))}
+                       />
+                       <TacticalDropdown 
+                          label="Energy"
+                          value={newTask.energyLevel}
+                          onChange={(val) => setNewTask({...newTask, energyLevel: val as EnergyLevel})}
+                          options={['Low', 'Medium', 'High'].map(e => ({ id: e, name: e }))}
+                       />
+                    </div>
                  </div>
 
                  {/* Tactical Config Grid */}
-                 <div className="grid grid-cols-2 gap-6 pt-8 border-t border-slate-50">
+                 <div className="space-y-8 pt-8 border-t border-slate-50">
                     <div className="space-y-3">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 block">Daily Freq</span>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 block">Task Duration</span>
                        <div className="flex gap-2">
-                          {[1, 2, 3].map(v => (
+                          {[0.5, 1, 2, 4].map(v => (
                             <button key={v} type="button" 
-                              onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, timesPerDay: v }}))}
+                              onClick={() => setNewTask(prev => ({...prev, estimatedDuration: v}))}
                               className={cn(
                                 "flex-1 h-10 rounded-xl border font-bold text-xs transition-all",
-                                newTask.frequency?.timesPerDay === v 
+                                newTask.estimatedDuration === v 
                                   ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
                                   : "bg-slate-50/50 border-slate-50 text-slate-400 hover:border-primary/20"
                               )}>
-                              {v}x
+                              {v < 1 ? '30m' : `${v}H`}
                             </button>
                           ))}
+                          <div className="relative flex-1 group">
+                             <input 
+                                type="number"
+                                step="0.5"
+                                placeholder="Custom"
+                                className="w-full h-10 bg-white border border-slate-100 rounded-xl px-4 font-bold text-center text-xs text-slate-800 focus:border-primary/50 outline-none transition-all shadow-sm"
+                                value={newTask.estimatedDuration}
+                                onChange={e => setNewTask({...newTask, estimatedDuration: parseFloat(e.target.value) || 0})}
+                             />
+                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300 pointer-events-none group-focus-within:opacity-0 transition-opacity">HRS</span>
+                          </div>
                        </div>
                     </div>
-                    <div className="space-y-3">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 block">Weekly Dist</span>
-                       <div className="flex gap-2">
-                          {[3, 5, 7].map(v => (
-                            <button key={v} type="button" 
-                              onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, daysPerWeek: v }}))}
-                              className={cn(
-                                "flex-1 h-10 rounded-xl border font-bold text-xs transition-all",
-                                newTask.frequency?.daysPerWeek === v 
-                                  ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
-                                  : "bg-slate-50/50 border-slate-50 text-slate-400 hover:border-primary/20"
-                              )}>
-                              {v}d
-                            </button>
-                          ))}
+
+                    <div className="grid grid-cols-2 gap-6">
+                       <div className="space-y-3">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 block">Daily Freq</span>
+                          <div className="flex gap-2">
+                             {[1, 2, 3, 4, 5].map(v => (
+                               <button key={v} type="button" 
+                                 onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, timesPerDay: v }}))}
+                                 className={cn(
+                                   "flex-1 h-10 rounded-xl border font-bold text-xs transition-all",
+                                   newTask.frequency?.timesPerDay === v 
+                                     ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
+                                     : "bg-slate-50/50 border-slate-50 text-slate-400 hover:border-primary/20"
+                                 )}>
+                                 {v}x
+                               </button>
+                             ))}
+                          </div>
+                       </div>
+                       <div className="space-y-3">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 block">Weekly Dist</span>
+                          <div className="flex gap-2">
+                             {[1, 2, 3, 4, 5, 6, 7].map(v => (
+                               <button key={v} type="button" 
+                                 onClick={() => setNewTask(prev => ({...prev, frequency: { ...prev.frequency!, daysPerWeek: v }}))}
+                                 className={cn(
+                                   "flex-1 h-10 rounded-xl border font-bold text-xs transition-all",
+                                   newTask.frequency?.daysPerWeek === v 
+                                     ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" 
+                                     : "bg-slate-50/50 border-slate-50 text-slate-400 hover:border-primary/20"
+                                 )}>
+                                 {v}d
+                               </button>
+                             ))}
+                          </div>
                        </div>
                     </div>
                  </div>
@@ -229,7 +292,7 @@ export default function TasksPage() {
                     </div>
                     <div className="text-right">
                        <p className="text-4xl font-bold tracking-tighter text-primary leading-none">
-                         {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration}
+                         {(newTask.frequency?.timesPerDay || 1) * (newTask.frequency?.daysPerWeek || 1) * newTask.estimatedDuration || 0}
                          <span className="text-lg opacity-40 ml-1">H</span>
                        </p>
                     </div>

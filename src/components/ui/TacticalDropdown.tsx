@@ -17,6 +17,7 @@ interface TacticalDropdownProps {
   placeholder?: string;
   label?: string;
   className?: string;
+  variant?: 'default' | 'compact';
 }
 
 export function TacticalDropdown({ 
@@ -25,7 +26,8 @@ export function TacticalDropdown({
   onChange, 
   placeholder = "Select Option...", 
   label,
-  className = "" 
+  className = "",
+  variant = 'default'
 }: TacticalDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
@@ -84,15 +86,17 @@ export function TacticalDropdown({
         transform: typeof window !== 'undefined' && coords.top + 350 > window.innerHeight ? 'translateY(-100%) translateY(-80px)' : 'none'
       }}
     >
-       <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-             <LayoutGrid className="w-3 h-3 text-primary/40" />
-             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Select Asset</span>
+        {variant === 'default' && (
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+             <div className="flex items-center gap-2">
+                <LayoutGrid className="w-3 h-3 text-primary/40" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Select Asset</span>
+             </div>
+             <div className="flex gap-1">
+                <div className="w-1 h-3 rounded-full bg-primary/20" />
+             </div>
           </div>
-          <div className="flex gap-1">
-             <div className="w-1 h-3 rounded-full bg-primary/20" />
-          </div>
-       </div>
+        )}
        
        <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-1.5">
           {options.length === 0 ? (
@@ -108,12 +112,13 @@ export function TacticalDropdown({
                 }}
                 className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all group text-left mb-0.5
                   ${value === opt.id ? 'bg-primary/5 text-primary' : 'hover:bg-slate-50'}
+                  ${variant === 'compact' ? 'p-2' : 'p-3.5'}
                 `}
               >
                 <div className="flex items-center gap-3.5 truncate">
                    <div className={`w-0.5 h-6 rounded-full transition-transform ${value === opt.id ? 'scale-y-100' : 'scale-y-0 opacity-0 group-hover:scale-y-100 group-hover:opacity-100'} duration-300`} style={{ backgroundColor: opt.color || 'hsl(var(--primary))' }} />
                    <div className="flex flex-col">
-                      <span className={`font-bold text-[11px] tracking-tight group-hover:translate-x-0.5 transition-transform italic uppercase ${value === opt.id ? 'text-primary' : 'text-slate-900'}`}>
+                      <span className={`font-bold tracking-tight group-hover:translate-x-0.5 transition-transform italic uppercase ${value === opt.id ? 'text-primary' : 'text-slate-900'} ${variant === 'compact' ? 'text-[10px]' : 'text-[11px]'}`}>
                          {opt.name}
                       </span>
                       {opt.subName && (
@@ -139,7 +144,7 @@ export function TacticalDropdown({
       <button
         type="button"
         onClick={handleToggle}
-        className={`w-full flex items-center justify-between bg-white border border-slate-200 rounded-xl px-5 py-3.5 font-bold text-[11px] tracking-widest uppercase outline-none transition-all hover:border-primary/30 hover:shadow-md ${isOpen ? 'ring-2 ring-primary/10 border-primary/40' : ''}`}
+        className={`w-full flex items-center justify-between bg-white border border-slate-200 rounded-xl font-bold tracking-widest uppercase outline-none transition-all hover:border-primary/30 hover:shadow-md ${isOpen ? 'ring-2 ring-primary/10 border-primary/40' : ''} ${variant === 'compact' ? 'px-4 py-3 text-[10px]' : 'px-5 py-3.5 text-[11px]'}`}
       >
         <div className="flex items-center gap-3 truncate">
           {selectedOption?.color && (

@@ -156,7 +156,7 @@ export function TacticalColorPicker({
               <Hash className="w-3 h-3 text-slate-300" />
               <input 
                 type="text" 
-                value={hexInput.toUpperCase()}
+                value={(hexInput || '').toUpperCase()}
                 onChange={handleHexChange}
                 className="bg-transparent border-none p-0 text-sm font-bold font-mono tracking-wider text-slate-900 focus:ring-0 w-full outline-none italic"
                 placeholder="#HEXCODE"
