@@ -1,7 +1,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, CalendarDays, Building2, FolderKanban, ListTodo, Settings } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Building2, FolderKanban, ListTodo, Settings, Box } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -9,55 +15,53 @@ const navigation = [
   { name: 'Companies', href: '/companies', icon: Building2 },
   { name: 'Projects', href: '/projects', icon: FolderKanban },
   { name: 'Tasks', href: '/tasks', icon: ListTodo },
-  { name: 'Profile', href: '/profile', icon: Settings },
+  { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full w-64 flex-col bg-muted/20">
-      <div className="flex h-20 shrink-0 items-center px-6">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mr-3 shadow-lg shadow-primary/30">
-          <CalendarDays className="h-5 w-5 text-primary-foreground" />
+    <div className="flex h-full w-20 flex-col bg-white/70 backdrop-blur-xl border-r border-slate-200 items-center py-6 group/sidebar">
+      <div className="mb-10 px-4">
+        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+          <Box className="h-6 w-6 text-white" />
         </div>
-        <h1 className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent tracking-tight">TimeSync</h1>
       </div>
-      <nav className="flex flex-1 flex-col px-4 py-6 space-y-1.5 overflow-y-auto">
+      
+      <nav className="flex flex-1 flex-col items-center space-y-4 w-full">
         {navigation.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.name}
               href={item.href}
+              title={item.name}
               className={cn(
-                'group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200',
+                'group flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-300 relative',
                 isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                  : 'text-slate-400 hover:bg-slate-50 hover:text-slate-900'
               )}
             >
               <item.icon
                 className={cn(
-                  'mr-3 h-5 w-5 flex-shrink-0 transition-colors',
-                  isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
+                  'h-5 w-5 transition-transform duration-300 group-hover:scale-110',
+                  isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-900'
                 )}
                 aria-hidden="true"
               />
-              {item.name}
+              {isActive && (
+                <div className="absolute -left-0 w-1 h-6 bg-primary rounded-r-full shadow-[2px_0_10px_rgba(129,140,248,0.5)]" />
+              )}
             </Link>
           );
         })}
       </nav>
       
-      <div className="p-4 mt-auto">
-        <div className="rounded-xl bg-gradient-to-br from-indigo-500/10 to-transparent p-4">
-          <p className="text-sm font-medium text-foreground mb-1">Freelance Pro</p>
-          <p className="text-xs text-muted-foreground mb-3">You are managing 3 companies right now.</p>
-          <div className="w-full bg-background/50 rounded-full h-1.5 mb-1 overflow-hidden">
-            <div className="bg-primary h-1.5 rounded-full" style={{ width: '65%' }}></div>
-          </div>
-          <p className="text-[10px] text-muted-foreground text-right">38/60 hrs booked</p>
+      <div className="mt-auto px-4">
+        <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center group cursor-pointer hover:border-primary/50 transition-colors">
+           <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black text-primary">JD</div>
         </div>
       </div>
     </div>

@@ -13,6 +13,24 @@ export interface UserProfile {
   preferredBlocks: string[]; // "Morning", "Afternoon", "Evening"
   lunchTime?: { start: string; durationMinutes: number };
   customBreaks?: { id: string; start: string; durationMinutes: number }[];
+  customPlatforms?: CustomPlatform[];
+  hiddenPresetIds?: string[];
+}
+
+export interface CustomAction {
+  name: string;
+  type: TaskType;
+  duration: number;
+  priority: Priority;
+  energyLevel: EnergyLevel;
+}
+
+export interface CustomPlatform {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  actions: CustomAction[];
 }
 
 export interface Company {
@@ -22,7 +40,10 @@ export interface Company {
   color: string;
   priority?: Priority;
   status: 'Active' | 'Paused';
+  hourlyRate?: number;
+  currencyCode?: string;
 }
+
 
 export interface Project {
   id: string;
@@ -53,4 +74,5 @@ export interface Task {
     daysOfWeek?: number[]; // [1, 2, 3...] where 1 = Monday, 7 = Sunday. Optional for pinning.
   };
   parentTaskId?: string; // Links instance to template task
+  completedAt?: string; // ISO datetime when task was finished
 }

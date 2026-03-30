@@ -20,54 +20,74 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  
+  --color-surface-low: hsl(var(--surface-low));
+  --color-surface-high: hsl(var(--surface-high));
+  --color-surface-highest: hsl(var(--surface-highest));
+  
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui;
+  --font-display: var(--font-manrope), ui-sans-serif, system-ui;
+
   --radius: var(--radius);
 }
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
+    --background: 0 0% 100%;       /* Pure White Background */
+    --foreground: 222 47% 11%;    /* #0F172A - Deep Slate Hub */
+    --card: 0 0% 100%;           /* White Cards */
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 243 75% 59%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    --primary: 235 85% 71%;       /* #818CF8 - Lavender / Periwinkle */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 226 71% 96%;     /* Soft Lavender Tint */
+    --secondary-foreground: 235 85% 30%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 235 85% 96%;
+    --accent-foreground: 235 85% 30%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 243 75% 59%;
-    --radius: 0.5rem;
+    --border: 214.3 31.8% 91.4%;  /* #E5E7EB - Clean SaaS Border */
+    --input: 214.3 31.8% 91.4%;
+    --ring: 235 85% 71%;
+    
+    --surface-low: 210 40% 98%;    /* #F8FAFC */
+    --surface-high: 0 0% 100%;
+    --surface-highest: 226 71% 94%;
+    
+    --radius: 1rem;               /* Increased roundness for Soft UI */
   }
  
   .dark {
-    --background: 222 55% 10%;
-    --foreground: 226 89% 92%;
-    --card: 222 28% 19%;
-    --card-foreground: 226 89% 92%;
-    --popover: 222 28% 19%;
-    --popover-foreground: 226 89% 92%;
-    --primary: 243 76% 59%;
-    --primary-foreground: 243 100% 88%;
-    --secondary: 217 32% 17%;
-    --secondary-foreground: 226 89% 92%;
-    --muted: 222 28% 19%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 32% 17%;
-    --accent-foreground: 226 89% 92%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 244 10% 30%;
-    --input: 244 10% 30%;
-    --ring: 243 76% 59%;
+    /* Digital Atelier Base: Pitch Black / Deep Slate */
+    --background: 222 47% 4%;    /* #050810 - The Deep Void */
+    --foreground: 226 89% 95%;   /* #eff2fe - High Contrast Ice */
+    --card: 222 47% 7%;          /* #080c18 - Subtle Surface */
+    --card-foreground: 226 89% 95%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 226 89% 95%;
+    --primary: 235 85% 75%;      /* #9ba4f9 - Indigo Glow */
+    --primary-foreground: 222 47% 4%;
+    --secondary: 222 47% 12%;    /* #0e1629 */
+    --secondary-foreground: 226 89% 95%;
+    --muted: 222 47% 10%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 235 85% 20%;       /* Deep Indigo shadow */
+    --accent-foreground: 226 89% 95%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 47% 15%;       /* #161e35 - Strategic Border */
+    --input: 222 47% 15%;
+    --ring: 235 85% 75%;
+
+    /* Tonal Layers (Digital Atelier Architecture) */
+    --surface-low: 222 47% 3%;    /* #04060b */
+    --surface-high: 222 47% 12%;   /* #0e1629 */
+    --surface-highest: 222 47% 18%;/* #1a233b */
   }
+
 }
 
 @layer base {
@@ -75,10 +95,79 @@
     border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/30;
+    @apply text-foreground antialiased selection:bg-primary/30 min-h-screen relative overflow-x-hidden;
+    background-color: hsl(var(--background));
+  }
+
+  /* Soft Background Blobs */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -10%;
+    left: -10%;
+    width: 40%;
+    height: 40%;
+    background: radial-gradient(circle, rgba(129, 140, 248, 0.15) 0%, transparent 70%);
+    filter: blur(100px);
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -10%;
+    right: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(circle, rgba(253, 186, 116, 0.1) 0%, transparent 70%);
+    filter: blur(100px);
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight font-bold;
   }
 }
 
 .glass {
-  @apply bg-white/10 backdrop-blur-md border border-white/20 dark:bg-black/20 dark:border-white/10 shadow-lg;
+  @apply bg-white/70 backdrop-blur-3xl border border-white/40 shadow-2xl;
+}
+
+.no-line {
+  border: none !important;
+}
+
+/* Status Pillar Accent */
+.status-pillar {
+  @apply w-[4px] h-full rounded-full transition-all duration-300;
+}
+
+/* Soft UI Scrollbar Architecture */
+@layer base {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 100px;
+    transition: all 0.3s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  /* Firefox Support */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
 }

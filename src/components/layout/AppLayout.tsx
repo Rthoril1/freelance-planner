@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { ToastContainer } from '../ui/Toasts';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
@@ -58,13 +59,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-64 lg:flex-col">
+      <div className="hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-20 lg:flex-col">
         <Sidebar />
       </div>
 
-      <div className="w-full flex flex-col lg:pl-64 min-h-screen">
+      <div className="w-full flex flex-col lg:pl-20 min-h-screen">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 max-w-[1600px] mx-auto w-full relative min-h-[50vh]">
+        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-12 max-w-[1920px] mx-auto w-full relative min-h-[50vh]">
           {isLoadingData ? (
             <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10">
               <div className="flex flex-col items-center gap-3">
@@ -74,6 +75,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           ) : children}
         </main>
+        <ToastContainer />
       </div>
     </div>
     </AuthGuard>

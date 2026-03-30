@@ -14,7 +14,10 @@ create table public.profiles (
   "maxHoursPerDay" integer,
   "preferredBlocks" jsonb,
   "lunchTime" jsonb,
-  "customBreaks" jsonb
+  "customBreaks" jsonb,
+  "avatarUrl" text,
+  "customPlatforms" jsonb default '[]'::jsonb,
+  "hiddenPresetIds" jsonb default '[]'::jsonb
 );
 
 -- Enable Row Level Security (RLS)
@@ -88,6 +91,8 @@ create table public.tasks (
   "scheduledEnd" timestamp with time zone,
   "platformId" text,
   frequency jsonb,
+  "parent_task_id" uuid references public.tasks(id) on delete cascade,
+  "completedAt" timestamp with time zone,
   "createdAt" timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

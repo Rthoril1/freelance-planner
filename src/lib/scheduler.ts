@@ -30,8 +30,7 @@ export function autoScheduleTasks(
 
   // 2. Expand recurring tasks into instances and assign to days based on load
   const scheduledTasks: Task[] = [];
-  const weekStart = startOfWeek(startDate, { weekStartsOn: 1 }); 
-  
+  const weekStart = startOfWeek(startDate, { weekStartsOn: 6 }); // Sync with Saturday anchor  
   // Track load per day and global weekly load
   const dayLoads: Record<number, number> = {};
   profile.workDays.forEach(d => dayLoads[d] = 0);
@@ -70,7 +69,8 @@ export function autoScheduleTasks(
         let remainingMinutes = task.estimatedDuration * 60;
         let currentTime = dayMinutes[dayIndex];
         const shiftEndMins = safeEndH * 60 + safeEndM;
-        const daysToAdd = dayIndex === 7 ? 6 : dayIndex - 1; 
+        // Mapping Mon-Sun (1-7) to Sat-Fri offset (0-6) relative to Saturday
+        const daysToAdd = (dayIndex - 6 + 7) % 7; 
         const currentDayDate = addDays(weekStart, daysToAdd);
 
         // Pre-calculate blocked periods just for this day once
