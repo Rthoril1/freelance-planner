@@ -8,6 +8,7 @@ create table public.profiles (
   id uuid references auth.users on delete cascade primary key,
   name text,
   type text,
+  phone text,
   "weeklyHoursAvailable" integer,
   "workDays" jsonb,
   "dailyAvailability" jsonb,
@@ -17,7 +18,8 @@ create table public.profiles (
   "customBreaks" jsonb,
   "avatarUrl" text,
   "customPlatforms" jsonb default '[]'::jsonb,
-  "hiddenPresetIds" jsonb default '[]'::jsonb
+  "hiddenPresetIds" jsonb default '[]'::jsonb,
+  "platformsInitialized" boolean default false
 );
 
 -- Enable Row Level Security (RLS)
@@ -58,6 +60,12 @@ create table public.companies (
 alter table public.companies enable row level security;
 create policy "Users manage own companies" on companies for all using (auth.uid() = user_id);
 
+-- Optional: Run these commands if upgrading an existing 'companies' table
+alter table public.companies add column if not exists logo_url text;
+alter table public.companies add column if not exists banner_url text;
+alter table public.companies add column if not exists hourly_rate numeric default 0;
+alter table public.companies add column if not exists currency_code text default 'USD';
+
 
 -- 3. Projects Table
 create table public.projects (
@@ -68,6 +76,7 @@ create table public.projects (
   "startDate" timestamp with time zone,
   "dueDate" timestamp with time zone,
   status text,
+  color text,
   "createdAt" timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -98,3 +107,10 @@ create table public.tasks (
 
 alter table public.tasks enable row level security;
 create policy "Users manage own tasks" on tasks for all using (auth.uid() = user_id);
+
+-- 5. Storage Buckets for Images
+insert into storage.buckets (id, name, public) values ('profile_assets', 'profile_assets', true);
+create policy "Public Access" on storage.objects for select using ( bucket_id = 'profile_assets' );
+create policy "Auth Insert" on storage.objects for insert with check ( bucket_id = 'profile_assets' and auth.role() = 'authenticated' );
+create policy "Auth Update" on storage.objects for update using ( bucket_id = 'profile_assets' and auth.role() = 'authenticated' );
+create policy "Auth Delete" on storage.objects for delete using ( bucket_id = 'profile_assets' and auth.role() = 'authenticated' );

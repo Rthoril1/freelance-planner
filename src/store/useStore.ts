@@ -2,6 +2,26 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { Company, Project, Task, UserProfile, CustomPlatform } from '../types';
 import { startOfWeek, isBefore, parseISO } from 'date-fns';
+import { PRESET_PLATFORMS } from '@/lib/constants';
+
+// Debounce timer for profile saves to avoid spamming Supabase on each keystroke
+let profileSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function saveProfileToSupabase(profile: UserProfile) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { email, ...cleanProfile } = profile as any;
+  cleanProfile.id = user.id;
+
+  const { error } = await supabase.from('profiles').upsert(cleanProfile);
+  if (error) {
+    console.error('Profile save error:', error.message, error.details);
+    // Optionally trigger a toast or notification system here
+  } else {
+    console.log('Profile saved successfully.');
+  }
+}
 
 interface AppState {
   profile: UserProfile | null;
@@ -57,11 +77,13 @@ export const useStore = create<AppState>()((set, get) => ({
     ]);
 
     const companies = (compRes.data || []).map(c => {
-      const { user_id, hourly_rate, currency_code, ...rest } = c;
+      const { user_id, hourly_rate, currency_code, logo_url, banner_url, ...rest } = c;
       return { 
         ...rest, 
         hourlyRate: hourly_rate || 0,
-        currencyCode: currency_code || 'USD'
+        currencyCode: currency_code || 'USD',
+        logoUrl: logo_url,
+        bannerUrl: banner_url
       } as Company;
     });
 
@@ -71,11 +93,12 @@ export const useStore = create<AppState>()((set, get) => ({
     });
     
     const tasks = (taskRes.data || []).map(t => {
-      const { project_id, parent_task_id, user_id, ...rest } = t;
+      const { project_id, parent_task_id, user_id, completed_at, ...rest } = t;
       return { 
         ...rest, 
         projectId: project_id,
-        parentTaskId: parent_task_id
+        parentTaskId: parent_task_id,
+        completedAt: completed_at
       } as Task;
     });
 
@@ -89,6 +112,8 @@ export const useStore = create<AppState>()((set, get) => ({
       preferredBlocks: ['Morning', 'Afternoon']
     };
 
+    profile.email = user.email;
+
     // Ensure defaults for lunch and breaks if missing
     if (!profile.lunchTime) {
       profile.lunchTime = { start: '13:00', durationMinutes: 60 };
@@ -100,6 +125,24 @@ export const useStore = create<AppState>()((set, get) => ({
     }
     if (!profile.customPlatforms) {
       profile.customPlatforms = [];
+    }
+
+    // Seed preset platforms into profile if not initialized
+    if (!profile.platformsInitialized) {
+      profile.customPlatforms = [
+        ...(profile.customPlatforms || []),
+        ...PRESET_PLATFORMS.map(p => ({
+          ...p,
+          id: `custom-${p.id}`
+        }))
+      ];
+      profile.platformsInitialized = true;
+      
+      // Auto-save so it persists for the user
+      supabase.from('profiles').update({
+        "customPlatforms": profile.customPlatforms,
+        "platformsInitialized": true
+      }).eq('id', user.id).then();
     }
     if (!profile.hiddenPresetIds) {
       profile.hiddenPresetIds = [];
@@ -139,18 +182,19 @@ export const useStore = create<AppState>()((set, get) => ({
 
   setProfile: async (profile) => {
     set({ profile });
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    
-    const { id, ...cleanProfile } = profile as any;
-    await supabase.from('profiles').update(cleanProfile).eq('id', user.id);
+    // Immediate save (used for avatar uploads and init saves)
+    await saveProfileToSupabase(profile);
   },
 
   updateProfile: async (updates) => {
-    const { profile, setProfile } = get();
-    if (profile) {
-      await setProfile({ ...profile, ...updates });
-    }
+    const { profile } = get();
+    if (!profile) return;
+    const merged = { ...profile, ...updates };
+    // Update UI state immediately for responsiveness
+    set({ profile: merged });
+    // Debounce the actual DB write by 800ms
+    if (profileSaveTimer) clearTimeout(profileSaveTimer);
+    profileSaveTimer = setTimeout(() => saveProfileToSupabase(merged), 800);
   },
 
   addCustomPlatform: async (platform) => {
@@ -174,6 +218,18 @@ export const useStore = create<AppState>()((set, get) => ({
   deleteCustomPlatform: async (id) => {
     const { profile, updateProfile } = get();
     if (profile) {
+      const platformToDelete = profile.customPlatforms?.find(p => p.id === id);
+      if (platformToDelete && platformToDelete.icon.startsWith('http')) {
+        const pathMatch = platformToDelete.icon.match(/profile_assets\/(.+)$/);
+        if (pathMatch && pathMatch[1]) {
+          const filePath = pathMatch[1].split('?')[0];
+          supabase.storage.from('profile_assets').remove([filePath])
+            .then(({ error }) => {
+               if (error) console.error("Failed to delete platform icon from storage:", error);
+            });
+        }
+      }
+
       const platforms = (profile.customPlatforms || []).filter(p => p.id !== id);
       await updateProfile({ customPlatforms: platforms });
     }
@@ -183,12 +239,14 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({ companies: [...state.companies, company] }));
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { hourlyRate, currencyCode, ...rest } = company;
+      const { hourlyRate, currencyCode, logoUrl, bannerUrl, ...rest } = company;
       const dbCompany = { 
         ...rest, 
         user_id: user.id, 
         hourly_rate: hourlyRate || 0,
-        currency_code: currencyCode || 'USD'
+        currency_code: currencyCode || 'USD',
+        logo_url: logoUrl,
+        banner_url: bannerUrl
       };
       await supabase.from('companies').insert(dbCompany);
     }
@@ -206,10 +264,32 @@ export const useStore = create<AppState>()((set, get) => ({
       dbFields.currency_code = dbFields.currencyCode;
       delete dbFields.currencyCode;
     }
+    if (dbFields.logoUrl !== undefined) {
+      dbFields.logo_url = dbFields.logoUrl;
+      delete dbFields.logoUrl;
+    }
+    if (dbFields.bannerUrl !== undefined) {
+      dbFields.banner_url = dbFields.bannerUrl;
+      delete dbFields.bannerUrl;
+    }
     await supabase.from('companies').update(dbFields).eq('id', id);
   },
 
   deleteCompany: async (id) => {
+    const { companies } = get();
+    const companyToDelete = companies.find(c => c.id === id);
+    if (companyToDelete) {
+       [companyToDelete.logoUrl, companyToDelete.bannerUrl].forEach(url => {
+          if (url && url.startsWith('http')) {
+             const pathMatch = url.match(/profile_assets\/(.+)$/);
+             if (pathMatch && pathMatch[1]) {
+                const filePath = pathMatch[1].split('?')[0];
+                supabase.storage.from('profile_assets').remove([filePath]).catch(console.error);
+             }
+          }
+       });
+    }
+
     set((state) => ({
       companies: state.companies.filter(c => c.id !== id),
       projects: state.projects.filter(p => p.companyId !== id),
@@ -247,7 +327,7 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   addTask: async (task) => {
-    set((state) => ({ tasks: [...state.tasks, task] }));
+    set((state) => ({ tasks: [task, ...state.tasks] }));
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { projectId, parentTaskId, ...rest } = task;
@@ -257,7 +337,12 @@ export const useStore = create<AppState>()((set, get) => ({
         project_id: projectId,
         parent_task_id: parentTaskId 
       };
-      await supabase.from('tasks').insert(dbTask);
+      const { error } = await supabase.from('tasks').insert(dbTask);
+      if (error) {
+        console.error('Task insertion failed:', error);
+        // Rollback local state on failure
+        set((state) => ({ tasks: state.tasks.filter(t => t.id !== task.id) }));
+      }
     }
   },
 
@@ -284,7 +369,16 @@ export const useStore = create<AppState>()((set, get) => ({
        dbFields.parent_task_id = dbFields.parentTaskId;
        delete dbFields.parentTaskId;
     }
-    await supabase.from('tasks').update(dbFields).eq('id', id);
+    if (dbFields.completedAt !== undefined) {
+       dbFields.completed_at = dbFields.completedAt;
+       delete dbFields.completedAt;
+    }
+    const { error } = await supabase.from('tasks').update(dbFields).eq('id', id);
+    if (error) {
+      console.error('Task update failed:', error);
+      // Revert local state on failure if needed
+      // (Advanced users: implementing a proper rollback here is recommended)
+    }
   },
 
   deleteTask: async (id) => {

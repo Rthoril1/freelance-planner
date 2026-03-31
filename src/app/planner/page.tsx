@@ -36,6 +36,7 @@ function DroppableColumn({ id, children, className }: { id: string, children: Re
 function SortableTaskCard({ 
   task, 
   companyColor, 
+  projectColor,
   companyName, 
   projectName, 
   onUnschedule,
@@ -43,6 +44,7 @@ function SortableTaskCard({
 }: { 
   task: Task, 
   companyColor: string, 
+  projectColor: string,
   companyName: string, 
   projectName: string, 
   onUnschedule?: () => void,
@@ -57,7 +59,7 @@ function SortableTaskCard({
     zIndex: isDragging ? 50 : 1 
   };
   
-  const height = Math.max(0.5, task.estimatedDuration) * HOUR_HEIGHT;
+  const height = Math.max(0.35, task.estimatedDuration) * HOUR_HEIGHT;
 
   if (isAbsolute && task.scheduledStart) {
     const startDate = new Date(task.scheduledStart);
@@ -82,25 +84,28 @@ function SortableTaskCard({
     ...(profile?.customPlatforms || [])
   ];
   const platform = allPlatforms.find(p => p.id === task.platformId);
-  const uiColor = platform?.color || companyColor;
+  const uiColor = projectColor;
 
   return (
     <div 
       ref={setNodeRef} 
-      style={{ ...style }}
+      style={{ 
+        ...style,
+        backgroundColor: task.status === 'Completed' ? undefined : projectColor + '0D'
+      }}
       className={cn(
         "group relative rounded-[20px] transition-all duration-300 overflow-hidden shadow-sm border border-slate-100",
         isDragging ? "shadow-2xl ring-4 ring-primary/20 border-primary scale-105 z-50 bg-white" : "bg-white hover:border-primary/40 hover:shadow-lg",
         task.status === 'Completed' ? "opacity-50 grayscale-[0.3]" : "",
-        !isAbsolute ? "mb-4" : ""
+        !isAbsolute ? "mb-3" : ""
       )}
     >
       {/* Accent line on the left */}
-      <div className="absolute top-0 left-0 bottom-0 w-1.5" style={{ backgroundColor: uiColor }} />
+      <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: uiColor }} />
       
       <div className={cn(
-        "flex flex-col h-full pl-4 pr-3 py-3 overflow-hidden",
-        isAbsolute ? "" : "min-h-[120px] justify-between"
+        "flex flex-col h-full pl-4 pr-3 py-2.5 overflow-hidden",
+        isAbsolute ? "" : "min-h-[70px] justify-between"
       )}>
         <div className="flex items-start justify-between gap-2 mb-1">
           <div {...(isAbsolute || task.status === 'Todo' ? { ...attributes, ...listeners } : {})} 
@@ -108,12 +113,23 @@ function SortableTaskCard({
           >
             <GripVertical className="w-3.5 h-3.5" />
           </div>
-          <p className={cn(
-            "font-bold text-xs tracking-tight leading-tight flex-1",
-            task.status === 'Completed' ? "line-through text-slate-400" : "text-slate-900 group-hover:text-primary transition-colors"
-          )}>
-            {task.name}
-          </p>
+          <div className="flex-1 min-w-0">
+            <p className={cn(
+              "font-bold text-xs tracking-tight leading-tight",
+              task.status === 'Completed' ? "line-through text-slate-400" : "text-slate-900 group-hover:text-primary transition-colors"
+            )}>
+              {task.name}
+            </p>
+            <div className="flex items-center gap-1.5 mt-1 border-t border-slate-50 pt-1">
+              <span className="text-[9px] font-bold" style={{ color: uiColor }}>{companyName}</span>
+              {projectName && (
+                <>
+                  <span className="text-[8px] text-slate-200">·</span>
+                  <span className="text-[9px] font-bold text-slate-400 truncate max-w-[90px]">{projectName}</span>
+                </>
+              )}
+            </div>
+          </div>
           {onUnschedule && (
             <button 
               onPointerDown={(e) => { e.stopPropagation(); }}
@@ -125,25 +141,25 @@ function SortableTaskCard({
           )}
         </div>
         
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[9px] font-bold text-slate-400 truncate max-w-[100px]">{companyName}</span>
-          {!isAbsolute && (
-            <span className="text-[9px] font-bold text-slate-300 truncate max-w-[80px]">
-              {projectName}
-            </span>
+        <div className="flex flex-wrap items-center gap-2 mt-auto pt-1">
+          <div className={cn(
+            "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full",
+            task.priority === 'High' ? "bg-rose-500/10 text-rose-500" :
+            task.priority === 'Medium' ? "bg-amber-500/10 text-amber-500" :
+            "bg-slate-100 text-slate-400"
+          )}>
+            {task.priority || 'Medium'}
+          </div>
+          {task.energyLevel && (
+            <div className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-full">
+              <Zap className="w-2.5 h-2.5 fill-current" />
+              {task.energyLevel}
+            </div>
           )}
+          <div className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-tighter bg-white/50 border border-slate-100 px-2 py-0.5 rounded-lg">
+            {task.estimatedDuration}h
+          </div>
         </div>
-
-        {isAbsolute && height > 40 && (
-           <div className="mt-auto flex justify-between items-center pt-2 border-t border-slate-50 opacity-60">
-              <span className="text-[9px] font-bold text-primary">
-                {format(new Date(task.scheduledStart!), 'HH:mm')}
-              </span>
-              <span className="text-[9px] font-black uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-lg text-slate-400">
-                {task.estimatedDuration}H
-              </span>
-           </div>
-        )}
       </div>
     </div>
   );
@@ -174,6 +190,7 @@ export default function PlannerPage() {
     return { 
       companyName: c?.name || 'Unknown', 
       companyColor: c?.color || '#818CF8',
+      projectColor: p?.color || c?.color || '#818CF8',
       projectName: p?.name || 'No Project'
     };
   };
@@ -265,10 +282,10 @@ export default function PlannerPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 gap-10 overflow-hidden relative min-h-0">
+        <div className="flex flex-1 gap-6 overflow-hidden relative min-h-0">
           
           {/* Backlog Column */}
-          <div className="w-[340px] flex-shrink-0 flex flex-col bg-white/40 backdrop-blur-md rounded-[32px] border border-white/60 p-8 shadow-inner overflow-hidden">
+          <div className="w-[340px] flex-shrink-0 flex flex-col bg-white/40 backdrop-blur-md rounded-[32px] border border-white/60 p-6 shadow-inner overflow-hidden">
              <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -286,7 +303,7 @@ export default function PlannerPage() {
                    <DroppableColumn id="unassigned" className="h-full min-h-[400px]">
                       {unassignedTasks.map(task => {
                         const info = getTaskInfo(task.id);
-                        return <SortableTaskCard key={task.id} task={task} companyColor={info.companyColor} companyName={info.companyName} projectName={info.projectName} />;
+                        return <SortableTaskCard key={task.id} task={task} companyColor={info.companyColor} projectColor={info.projectColor} companyName={info.companyName} projectName={info.projectName} />;
                       })}
                       {unassignedTasks.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-20 text-center opacity-30 select-none">
@@ -407,6 +424,7 @@ export default function PlannerPage() {
                                           key={t.id} 
                                           task={t} 
                                           companyColor={info.companyColor} 
+                                          projectColor={info.projectColor}
                                           companyName={info.companyName} 
                                           projectName={info.projectName} 
                                           isAbsolute

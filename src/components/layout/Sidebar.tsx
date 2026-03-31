@@ -13,7 +13,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Weekly Planner', href: '/planner', icon: CalendarDays },
   { name: 'Companies', href: '/companies', icon: Building2 },
-  { name: 'Projects', href: '/projects', icon: FolderKanban },
+
   { name: 'Tasks', href: '/tasks', icon: ListTodo },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

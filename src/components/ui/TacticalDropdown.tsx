@@ -60,8 +60,8 @@ export function TacticalDropdown({
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setCoords({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
+        top: rect.bottom,   // viewport-relative, no scrollY needed for position:fixed
+        left: rect.left,    // viewport-relative, no scrollX needed for position:fixed
         width: rect.width
       });
     }

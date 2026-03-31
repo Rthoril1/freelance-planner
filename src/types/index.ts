@@ -6,6 +6,8 @@ export interface UserProfile {
   name: string;
   type: string; // e.g., 'Freelancer'
   avatarUrl?: string; // Added
+  email?: string;
+  phone?: string;
   weeklyHoursAvailable: number;
   workDays: number[]; // 0 = Sunday, 1 = Monday, etc.
   dailyAvailability: { start: string; end: string }; // "08:00" to "18:00"
@@ -15,6 +17,7 @@ export interface UserProfile {
   customBreaks?: { id: string; start: string; durationMinutes: number }[];
   customPlatforms?: CustomPlatform[];
   hiddenPresetIds?: string[];
+  platformsInitialized?: boolean;
 }
 
 export interface CustomAction {
@@ -41,6 +44,8 @@ export interface Company {
   name: string;
   description: string;
   color: string;
+  logoUrl?: string; // Added for brand logo
+  bannerUrl?: string; // Added for background banner
   priority?: Priority;
   status: 'Active' | 'Paused';
   hourlyRate?: number;
@@ -52,6 +57,7 @@ export interface Project {
   id: string;
   companyId: string;
   name: string;
+  color?: string;
   status: 'Active' | 'New' | 'Paused' | 'Delivered';
   startDate: string;
   deadline?: string;

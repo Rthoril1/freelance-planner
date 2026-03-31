@@ -8,3 +8,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export const uploadToStorage = async (bucket: string, path: string, file: File): Promise<string> => {
+  const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: '3600',
+    upsert: true,
+  });
+
+  if (error) {
+    console.error('Upload Error:', error);
+    throw error;
+  }
+
+  const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  return publicData.publicUrl;
+};

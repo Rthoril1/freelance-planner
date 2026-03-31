@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
@@ -25,37 +25,36 @@ export default function TasksPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
 
-  const presetPlatforms = PRESET_PLATFORMS.map(p => {
-    const override = profile?.customPlatforms?.find(cp => cp.id === `override-${p.id}`);
-    return override || p;
-  }).filter(p => {
-    const baseId = p.id.replace('override-', '');
-    return !profile?.hiddenPresetIds?.includes(baseId);
-  });
-
-  const purelyCustomPlatforms = (profile?.customPlatforms || []).filter(p => !p.id.startsWith('override-') && !p.isHidden);
-
-  const displayedPlatforms = [...presetPlatforms, ...purelyCustomPlatforms];
-
-  const currentPlatform = displayedPlatforms.find(p => p.id === selectedPlatform);
-
   const applyPreset = (platformName: string, action: any) => {
     setNewTask(prev => ({
       ...prev,
-      name: action.name,
-      type: action.type,
-      priority: action.priority,
-      energyLevel: action.energyLevel,
-      estimatedDuration: action.duration,
+      name: action.name || '',
+      type: action.type || 'Deep Work',
+      priority: action.priority || 'Medium',
+      energyLevel: action.energyLevel || 'Medium',
+      estimatedDuration: action.duration || action.estimatedDuration || 1,
       frequency: {
-        timesPerDay: action.timesPerDay || prev.frequency?.timesPerDay || 1,
-        daysPerWeek: action.daysPerWeek || prev.frequency?.daysPerWeek || 5
+        timesPerDay: action.timesPerDay || 1,
+        daysPerWeek: action.daysPerWeek || 5
       }
     }));
     setTimeout(() => {
       nameInputRef.current?.focus();
     }, 10);
   };
+
+  const displayedPlatforms = (profile?.customPlatforms || []).filter(p => !p.isHidden);
+
+  const allPlatforms = [
+    ...(profile?.customPlatforms || []),
+    ...PRESET_PLATFORMS.filter(p => !profile?.customPlatforms?.some(cp => cp.id === p.id))
+  ];
+
+  const currentPlatform = displayedPlatforms.find(p => p.id === selectedPlatform);
+
+  const projectForNewTask = projects.find(p => p.id === newTask.projectId);
+  const companyForNewTask = companies.find(c => c.id === projectForNewTask?.companyId);
+
 
   useEffect(() => {
     if (projects.length > 0 && !newTask.projectId) {
@@ -137,7 +136,9 @@ export default function TasksPage() {
                            )}
                            style={{ borderColor: selectedPlatform === p.id ? p.color : undefined, color: selectedPlatform === p.id ? p.color : undefined }}
                          >
-                           <span className="text-base">{p.icon}</span> {p.name}
+                           <span className="text-base flex items-center justify-center">
+                              {typeof p.icon === 'string' && (p.icon.startsWith('data:image/') || p.icon.startsWith('http')) ? <img src={p.icon} alt={p.name} className="w-4 h-4 object-cover rounded shadow-sm" /> : p.icon}
+                           </span> {p.name}
                          </button>
                        ))}
                     </div>
@@ -336,15 +337,16 @@ export default function TasksPage() {
            </div>
 
            <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 auto-rows-min">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-min">
                  {tasks.filter(t => !t.parentTaskId).map(task => {
                     const project = projects.find(p => p.id === task.projectId);
                     const company = companies.find(c => c.id === project?.companyId);
-                    const platform = displayedPlatforms.find(p => p.id === task.platformId);
-                    const uiColor = platform?.color || company?.color || '#818CF8';
+                    const platform = allPlatforms.find(p => p.id === task.platformId);
+                    const projectColor = project?.color || company?.color || "#6366f1";
+                     const uiColor = platform?.color || projectColor;
 
                     return (
-                       <div key={task.id} className="group bg-white rounded-[32px] border border-slate-100 p-8 hover:shadow-xl transition-all duration-300 relative flex flex-col min-h-[220px]">
+                       <div key={task.id} className="group bg-white rounded-[32px] border border-slate-100 p-6 hover:shadow-xl transition-all duration-300 relative flex flex-col min-h-[220px] overflow-hidden" style={{ backgroundColor: projectColor + "0D" }}>
                           <div className="absolute top-0 left-0 bottom-0 w-1.5" style={{ backgroundColor: uiColor }} />
                           
                           <div className="flex justify-between items-start mb-6">
@@ -360,7 +362,7 @@ export default function TasksPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2 mb-8">
-                             <span className="px-3 py-1 bg-slate-50 rounded-lg text-[9px] font-bold text-slate-400 uppercase tracking-widest border border-slate-100">{project?.name || 'Project-Less'}</span>
+                             <span className="px-3 py-1 bg-white rounded-lg text-[9px] font-bold uppercase tracking-widest border" style={{ color: projectColor, borderColor: projectColor + "30" }}>{project?.name || "Project-Less"}</span>
                              <span className={cn(
                                "px-3 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest border",
                                task.priority === 'High' ? "bg-orange-50 text-orange-500 border-orange-100" : "bg-slate-50 text-slate-400 border-slate-100"
@@ -371,7 +373,7 @@ export default function TasksPage() {
                              <div className="flex items-center gap-3">
                                 <span className="text-lg font-bold text-slate-900 tracking-tighter">{task.estimatedDuration}H</span>
                                 <span className="w-1 h-1 rounded-full bg-slate-200" />
-                                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-300">{task.frequency?.timesPerDay}x Daily · {task.frequency?.daysPerWeek}d Weekly</span>
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-300">{task.frequency?.timesPerDay}x Daily Â· {task.frequency?.daysPerWeek}d Weekly</span>
                              </div>
                              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
                                 <button
@@ -407,3 +409,4 @@ export default function TasksPage() {
     </div>
   );
 }
+

@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { generateId, cn } from '@/lib/utils';
 import { CustomPlatform, CustomAction, TaskType, Priority, EnergyLevel, UserProfile } from '@/types';
-import { PRESET_PLATFORMS, TASK_TYPES } from '@/lib/constants';
+import { TASK_TYPES } from '@/lib/constants';
+import { ProfilePhotoUploader } from '@/components/ui/ProfilePhotoUploader';
 import { TacticalDropdown } from '@/components/ui/TacticalDropdown';
 import { TacticalColorPicker } from '@/components/ui/TacticalColorPicker';
 import { TacticalIconPicker } from '@/components/ui/TacticalIconPicker';
@@ -82,9 +83,10 @@ export default function SettingsPage() {
   // Stats
   const totalCompanies = companies.length;
   const totalProjects = projects.length;
-  const activePlatforms = [...PRESET_PLATFORMS, ...(profile?.customPlatforms || [])].length;
+  const activePlatforms = (profile?.customPlatforms || []).filter(p => !p.isHidden).length;
 
   const handleTogglePreset = (presetId: string) => {
+    // Legacy support logic
     const currentHidden = profile?.hiddenPresetIds || [];
     const newHidden = currentHidden.includes(presetId)
       ? currentHidden.filter(id => id !== presetId)
@@ -99,25 +101,13 @@ export default function SettingsPage() {
   const handleSavePlatform = () => {
     if (!editingPlatform) return;
     
-    if (editingPlatform.id.startsWith('custom-')) {
-      // Check if it's new or existing
-      const isExisting = profile?.customPlatforms?.some(p => p.id === editingPlatform.id);
-      if (isExisting) {
-        updateCustomPlatform(editingPlatform.id, editingPlatform);
-      } else {
-        addCustomPlatform(editingPlatform);
-      }
+    const isExisting = profile?.customPlatforms?.some(p => p.id === editingPlatform.id);
+    if (isExisting) {
+      updateCustomPlatform(editingPlatform.id, editingPlatform);
     } else {
-      const existing = profile?.customPlatforms?.find(p => p.id === `override-${editingPlatform.id}`);
-      if (existing) {
-        updateCustomPlatform(existing.id, editingPlatform);
-      } else {
-        addCustomPlatform({
-          ...editingPlatform,
-          id: `override-${editingPlatform.id}`
-        });
-      }
+      addCustomPlatform(editingPlatform);
     }
+    
     setEditingPlatform(null);
   };
 
@@ -137,11 +127,7 @@ export default function SettingsPage() {
 
         <div className="flex items-center gap-6">
           <div className="flex -space-x-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
-                {i}
-              </div>
-            ))}
+             <ProfilePhotoUploader />
           </div>
           <div className="px-6 py-3 bg-white rounded-2xl border border-slate-100 shadow-sm">
              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 block mb-1">System Health</span>
@@ -217,73 +203,21 @@ export default function SettingsPage() {
                </div>
 
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Presets */}
-                  {PRESET_PLATFORMS.map(p => {
-                    const isHidden = profile?.hiddenPresetIds?.includes(p.id);
-                    const override = profile?.customPlatforms?.find(cp => cp.id === `override-${p.id}`);
-                    const activeP = override || p;
-
+                  {profile?.customPlatforms?.map(p => {
+                    const isImage = typeof p.icon === 'string' && (p.icon.startsWith('data:image/') || p.icon.startsWith('http'));
                     return (
-                      <div key={p.id} className={cn(
-                        "group bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm relative transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200/50",
-                        isHidden && "opacity-50 grayscale hover:opacity-100 hover:grayscale-0"
-                      )}>
-                        <div className="flex items-start justify-between mb-8">
-                           <div className="flex items-center gap-4">
-                              <div className="w-14 h-14 rounded-3xl flex items-center justify-center text-3xl shadow-inner border border-slate-50" style={{ backgroundColor: `${activeP.color}10`, color: activeP.color }}>
-                                 {activeP.icon}
-                              </div>
-                              <div>
-                                 <h3 className="text-xl font-bold text-slate-900">{activeP.name}</h3>
-                                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-300">Preset Protocol</p>
-                              </div>
-                           </div>
-                           <button 
-                             onClick={() => handleTogglePreset(p.id)}
-                             className={cn(
-                               "p-2 rounded-xl transition-all border shrink-0",
-                               isHidden ? "bg-slate-50 text-slate-300 border-slate-100 hover:text-slate-500" : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
-                             )}
-                             title={isHidden ? "Show in Task Ledger" : "Hide from Task Ledger"}
-                           >
-                             {!isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                           </button>
-                        </div>
-                        
-                        <div className="space-y-3 mb-10">
-                           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                              <span>Active Matrix</span>
-                              <span>{activeP.actions.length} Signals</span>
-                           </div>
-                           <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(activeP.actions.length * 20, 100)}%`, backgroundColor: activeP.color }} />
-                           </div>
-                        </div>
-
-                        <button 
-                          onClick={() => setEditingPlatform(activeP)}
-                          className="w-full py-4 rounded-2xl bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all transform group-hover:translate-y-[-4px]"
-                        >
-                          Edit Protocol
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {/* Custom Platforms */}
-                  {profile?.customPlatforms?.filter(p => p.id.startsWith('custom-')).map(p => (
                     <div key={p.id} className={cn(
                       "group bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm relative transition-all duration-500 hover:shadow-2xl hover:shadow-slate-200/50",
                       p.isHidden && "opacity-50 grayscale hover:opacity-100 hover:grayscale-0"
                     )}>
                        <div className="flex items-start justify-between mb-8">
                            <div className="flex items-center gap-4">
-                              <div className="w-14 h-14 rounded-3xl flex items-center justify-center text-3xl shadow-inner border border-slate-50" style={{ backgroundColor: `${p.color}10`, color: p.color }}>
-                                 {p.icon}
+                              <div className="w-14 h-14 rounded-3xl overflow-hidden flex items-center justify-center text-3xl shadow-inner border border-slate-50 relative" style={{ backgroundColor: `${p.color}10`, color: p.color }}>
+                                 {isImage ? <img src={p.icon} alt={p.name} className="w-full h-full object-cover" /> : p.icon}
                               </div>
                               <div>
                                  <h3 className="text-xl font-bold text-slate-900">{p.name}</h3>
-                                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Custom Signal</p>
+                                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Protocol Map</p>
                               </div>
                            </div>
                            <div className="flex items-center gap-3">
@@ -323,7 +257,7 @@ export default function SettingsPage() {
                           Calibrate Protocol
                         </button>
                     </div>
-                  ))}
+                  )})}
                </div>
             </div>
           )}
@@ -625,7 +559,10 @@ export default function SettingsPage() {
               <div className="px-10 py-8 border-b border-slate-50 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-6">
                     <div className="w-14 h-14 rounded-[28px] flex items-center justify-center text-3xl shadow-inner border border-slate-50" style={{ backgroundColor: `${editingPlatform.color}10`, color: editingPlatform.color }}>
-                       {editingPlatform.icon}
+                        {(typeof editingPlatform.icon === 'string' && (editingPlatform.icon.startsWith('http') || editingPlatform.icon.startsWith('data:image/')))
+                          ? <img src={editingPlatform.icon} alt={editingPlatform.name} className="w-full h-full object-cover rounded-[22px]" />
+                          : <span>{editingPlatform.icon || '?'}</span>
+                        }
                     </div>
                     <div>
                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">{editingPlatform.id.startsWith('custom-') ? editingPlatform.name : editingPlatform.name + ' Protocol'}</h3>
@@ -680,8 +617,8 @@ export default function SettingsPage() {
                                setEditingPlatform({
                                  ...editingPlatform,
                                  actions: [
-                                   ...editingPlatform.actions,
-                                   { name: 'New Signal', type: 'Deep Work', priority: 'Medium', energyLevel: 'Medium', duration: 1, daysPerWeek: 5, timesPerDay: 1 }
+                                   { name: 'New Signal', type: 'Deep Work', priority: 'Medium', energyLevel: 'Medium', duration: 1, daysPerWeek: 5, timesPerDay: 1 },
+                                   ...editingPlatform.actions
                                  ]
                                });
                             }}
@@ -715,7 +652,7 @@ export default function SettingsPage() {
                                         onChange={(e) => {
                                            const newActs = [...editingPlatform.actions];
                                            newActs[i].name = e.target.value;
-                                           setEditingPlatform({...editingPlatform, name: e.target.value});
+                                           setEditingPlatform({...editingPlatform, actions: newActs});
                                         }}
                                      />
                                   </div>

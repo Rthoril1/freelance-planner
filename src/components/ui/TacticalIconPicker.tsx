@@ -1,6 +1,15 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
+import { Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { uploadToStorage, supabase } from '@/lib/supabase';
+import { generateId } from '@/lib/utils';
 import { createPortal } from 'react-dom';
+
+const DEFAULT_ICONS = [
+  '⚡', '🚀', '💻', '📱', '🌐', '🎨', '🖌️', '📊', 
+  '📈', '🗄️', '⚙️', '🛠️', '🔗', '📝', '📅', '💬', 
+  '📧', '💸', '🛒', '🏢', '🔥', '✨', '🎯', '🧩'
+];
 
 interface TacticalIconPickerProps {
   value: string;
@@ -8,17 +17,14 @@ interface TacticalIconPickerProps {
   className?: string;
 }
 
-const TACTICAL_ICONS = [
-  '⚡', '🚀', '🎯', '🔥', '💡', '✨', '💻', '📱', 
-  '📊', '📈', '🛠️', '🎨', '📝', '✉️', '📅', '🔍', 
-  '🌐', '🛡️', '🏆', '⭐', '🎧', '📸', 'video', '💼'
-];
-
 export function TacticalIconPicker({ 
   value, 
   onChange, 
   className = "" 
 }: TacticalIconPickerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
   const [isOpen, setIsOpen] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,77 +61,105 @@ export function TacticalIconPicker({
     }
   };
 
-  const handleOpen = () => {
-    updateCoords();
-    setIsOpen(true);
+  const handleToggle = () => {
+    if (!isOpen) updateCoords();
+    setIsOpen(!isOpen);
   };
 
-  const PopoverContent = (
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      setIsOpen(false);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      const path = `icons/${user.id}/${generateId()}-${file.name}`;
+      const url = await uploadToStorage('profile_assets', path, file);
+      
+      onChange(url);
+    } catch (error) {
+      console.error('Failed to upload icon', error);
+      alert('Failed to upload image. Ensure the storage bucket exists.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const isImage = typeof value === 'string' && (value.startsWith('http') || value.startsWith('data:image/'));
+
+  const PopoverMenu = (
     <div 
       ref={popoverRef}
-      role="dialog"
-      aria-label="Icon Palette"
-      className="fixed z-[9999] w-[320px] bg-white border border-slate-200 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in fade-in zoom-in-95 duration-200 pointer-events-auto"
+      className="fixed z-[9999] bg-white border border-slate-200 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in zoom-in-95 fade-in duration-200 pointer-events-auto p-5 flex flex-col gap-4"
       style={{ 
-        top: `${coords.top + 12}px`, 
-        left: `${Math.min(coords.left, typeof window !== 'undefined' ? window.innerWidth - 340 : coords.left)}px`,
+        top: `${coords.top + 8}px`, 
+        left: `${coords.left}px`,
+        width: '320px',
       }}
     >
-       <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tactical Glyphs</span>
-       </div>
-       
-       <div className="p-5 overflow-y-auto max-h-[300px] custom-scrollbar">
-          <div className="grid grid-cols-6 gap-2">
-             {TACTICAL_ICONS.map((icon) => (
-               <button
-                 key={icon}
-                 type="button"
-                 title="Select Icon"
-                 onClick={() => {
-                   onChange(icon === 'video' ? '📹' : icon);
-                   setIsOpen(false);
-                 }}
-                 className={`h-10 text-xl border rounded-xl flex items-center justify-center transition-all hover:-translate-y-1 hover:shadow-md
-                   ${value === icon || (value === '📹' && icon === 'video') ? 'bg-primary/10 border-primary text-primary shadow-sm' : 'bg-slate-50 border-slate-100 text-slate-700 hover:border-slate-300'}
-                 `}
-               >
-                 {icon === 'video' ? '📹' : icon}
-               </button>
-             ))}
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-2 px-1">Or Type Custom Emoji</span>
-            <input 
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-center text-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-inner"
-              value={value}
-              onChange={(e) => {
-                 onChange(e.target.value);
-              }}
-              placeholder="✨"
-              maxLength={2}
-            />
-          </div>
-       </div>
+      <div className="grid grid-cols-6 gap-2">
+        {DEFAULT_ICONS.map(icon => (
+           <button
+             key={icon}
+             type="button"
+             onClick={() => {
+                onChange(icon);
+                setIsOpen(false);
+             }}
+             className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all hover:bg-slate-50 hover:scale-110 active:scale-95 ${value === icon ? 'bg-primary/10 border border-primary/20' : 'border border-transparent'}`}
+           >
+              {icon}
+           </button>
+        ))}
+      </div>
+      
+      <div className="border-t border-slate-100 mt-2 pt-5 flex flex-col gap-3">
+         <p className="text-[10px] font-bold text-slate-400 capitalize text-center mb-1">Don't see your desired icon?</p>
+         <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full bg-slate-50 hover:bg-primary hover:text-white text-slate-500 transition-colors rounded-2xl py-3.5 flex items-center justify-center gap-2 group border border-slate-100"
+         >
+            <Upload className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Upload Custom Image</span>
+         </button>
+         <p className="text-center text-[9px] font-bold text-slate-300 uppercase tracking-widest">Supports 100x100px PNG/JPG</p>
+      </div>
     </div>
   );
 
   return (
     <div className={`relative ${className}`} ref={containerRef}>
+      <input 
+        type="file" 
+        accept="image/png, image/jpeg, image/jpg" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+      
       <button
         type="button"
-        onClick={handleOpen}
-        className="w-16 h-16 bg-white border border-slate-200 rounded-2xl text-2xl text-center shadow-sm flex items-center justify-center hover:border-primary/50 transition-colors group relative hover:shadow-md cursor-pointer"
-        title="Choose Icon"
+        disabled={isUploading}
+        onClick={handleToggle}
+        className="shrink-0 w-16 h-16 bg-white border border-slate-200 rounded-2xl flex items-center justify-center group relative hover:border-primary/50 transition-colors shadow-sm cursor-pointer overflow-hidden p-1"
+        title="Select Protocol Icon"
       >
-        <span>{value || '❓'}</span>
-        <div className="absolute inset-x-0 bottom-[-10px] opacity-0 group-hover:opacity-100 group-hover:bottom-[-20px] transition-all duration-300 pointer-events-none">
-          <span className="inline-block bg-slate-800 text-white text-[9px] font-black uppercase px-2 py-1 rounded shadow-xl tracking-wider select-none whitespace-nowrap">Change Icon</span>
-        </div>
+        {isUploading ? (
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        ) : isImage ? (
+          <img src={value} alt="Platform Icon" className="w-full h-full object-cover rounded-xl shadow-sm" />
+        ) : (
+          <div className="text-3xl group-hover:scale-110 transition-transform flex items-center justify-center w-full h-full">
+             {value || '⚡'}
+          </div>
+        )}
       </button>
 
-      {isOpen && typeof document !== 'undefined' && createPortal(PopoverContent, document.body)}
+      {isOpen && typeof document !== 'undefined' && createPortal(PopoverMenu, document.body)}
     </div>
   );
 }

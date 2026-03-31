@@ -65,7 +65,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       <div className="w-full flex flex-col lg:pl-20 min-h-screen">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-12 max-w-[1920px] mx-auto w-full relative min-h-[50vh]">
+        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-6 w-full relative min-h-[50vh]">
           {isLoadingData ? (
             <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10">
               <div className="flex flex-col items-center gap-3">

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -21,8 +21,19 @@ import {
   DollarSign,
   Activity,
   Play,
-  Settings
+  Settings,
+  User,
+  Camera,
+  Loader2,
+  Image as ImageIcon
 } from 'lucide-react';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  ResponsiveContainer, 
+  Tooltip as RechartsTooltip 
+} from 'recharts';
 import { 
   format, 
   isSameDay, 
@@ -33,20 +44,36 @@ import {
   endOfMonth, 
   isWithinInterval,
   addHours,
+  addDays,
   startOfDay,
   setHours,
   setMinutes,
   addMinutes,
-  differenceInMinutes
+  differenceInMinutes,
+  differenceInSeconds
 } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, generateId } from '@/lib/utils';
+import Cropper from 'react-easy-crop';
+import { getCroppedImg } from '@/lib/cropImage';
+import { uploadToStorage, supabase } from '@/lib/supabase';
+import { useRef } from 'react';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { profile, tasks, companies, projects } = useStore();
+  const { profile, updateProfile, tasks, companies, projects, updateTask } = useStore();
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('Wed');
+  const [activeTab, setActiveTab] = useState(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date().getDay()];
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -59,6 +86,41 @@ export default function Dashboard() {
       router.push('/onboarding');
     }
   }, [mounted, profile, router]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => setCropImageSrc(reader.result?.toString() || ''));
+      reader.readAsDataURL(e.target.files[0]);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+    }
+    e.target.value = '';
+  };
+
+  const handleApplyCrop = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    try {
+      setIsUploadingAvatar(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      const croppedBlob = await getCroppedImg(cropImageSrc, croppedAreaPixels);
+      if (!croppedBlob) throw new Error("Failed to crop image");
+
+      const file = new File([croppedBlob], `avatar.jpg`, { type: 'image/jpeg' });
+      const path = `avatars/${user.id}/${generateId()}-${file.name}`;
+      const url = await uploadToStorage('profile_assets', path, file);
+      
+      await updateProfile({ avatarUrl: url });
+      setCropImageSrc(null);
+    } catch (error) {
+       console.error(`Failed to upload avatar`, error);
+       alert("Upload failed. Ensure Supabase storage bucket exists.");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   // Financial Orchestration Calculations
   const metrics = useMemo(() => {
@@ -89,6 +151,43 @@ export default function Dashboard() {
       year: yearlyProjected
     };
   }, [tasks, companies, projects]);
+
+  const workCompositionData = useMemo(() => {
+    const inner: any[] = [];
+    const outer: any[] = [];
+    let totalHours = 0;
+
+    companies.forEach(company => {
+      const companyProjects = projects.filter(p => p.companyId === company.id);
+      let companyTotal = 0;
+
+      companyProjects.forEach(project => {
+        const projectTasks = tasks.filter(t => t.projectId === project.id);
+        const projectHours = projectTasks.reduce((sum, t) => sum + (t.estimatedDuration || 0), 0);
+        
+        if (projectHours > 0) {
+          outer.push({
+            name: project.name,
+            value: projectHours,
+            fill: company.color,
+            companyName: company.name
+          });
+          companyTotal += projectHours;
+        }
+      });
+
+      if (companyTotal > 0) {
+        inner.push({
+          name: company.name,
+          value: companyTotal,
+          fill: company.color
+        });
+        totalHours += companyTotal;
+      }
+    });
+
+    return { inner, outer, totalHours };
+  }, [companies, projects, tasks]);
 
   // Operational Status Logic
   const operationalStatus = useMemo(() => {
@@ -156,7 +255,7 @@ export default function Dashboard() {
       color: 'text-emerald-500', 
       bg: 'bg-emerald-500/10', 
       label: 'Deep Work',
-      timeLabel: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:00` // Mocking seconds for aesthetic
+      timeLabel: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
     };
   }, [profile, currentTime]);
 
@@ -175,7 +274,7 @@ export default function Dashboard() {
           </span>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-foreground">Digital Atelier</h1>
-            <span className="text-muted-foreground/30 font-light">•</span>
+            <span className="text-muted-foreground/30 font-light">Ã¢â‚¬Â¢</span>
             <span className="text-primary font-bold text-sm">Strategic Node</span>
           </div>
         </div>
@@ -221,29 +320,63 @@ export default function Dashboard() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full -translate-y-12 translate-x-12" />
             
             <div className="relative z-10">
-              <div className="w-full aspect-[4/5] rounded-[32px] overflow-hidden mb-8 relative border-4 border-background shadow-2xl">
+              <input type="file" ref={avatarInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
+              
+              <div onClick={() => avatarInputRef.current?.click()} className="cursor-pointer w-full aspect-[4/5] rounded-[32px] overflow-hidden mb-8 relative border-4 border-background shadow-2xl group/avatar">
                 {profile.avatarUrl ? (
                    <img src={profile.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-surface-highest flex items-center justify-center">
-                    <Zap className="h-16 w-16 text-primary/20" />
+                    <User className="h-16 w-16 text-primary/20" />
                   </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex flex-col items-center justify-center">
+                   {isUploadingAvatar ? <Loader2 className="w-8 h-8 text-white animate-spin" /> : (
+                     <>
+                       <Camera className="w-8 h-8 text-white mb-2" />
+                       <span className="text-white text-[10px] font-black uppercase tracking-widest leading-none">Update Photo</span>
+                       <span className="text-white/70 text-[8px] font-black uppercase tracking-widest mt-1">Recommended: 400x500 (4:5)</span>
+                     </>
+                   )}
+                </div>
               </div>
 
-              <div className="space-y-1 mb-8">
-                <h2 className="text-2xl font-black tracking-tight text-foreground">{profile.name}</h2>
-                <p className="text-sm text-muted-foreground font-medium">{profile.type} Strategist</p>
-              </div>
+              <div className="space-y-4 mb-4">
+                <div className="flex flex-col">
+                  <input 
+                     className="text-2xl font-black tracking-tight text-foreground bg-transparent border-none outline-none hover:bg-surface-highest focus:bg-surface-highest rounded px-2 -ml-2 transition-colors w-full"
+                     value={profile.name}
+                     onChange={(e) => updateProfile({ name: e.target.value })}
+                  />
+                  <div className="flex items-center gap-1">
+                     <input 
+                        className="text-sm text-muted-foreground font-medium bg-transparent border-none outline-none hover:bg-surface-highest focus:bg-surface-highest rounded px-2 -ml-2 transition-colors w-full max-w-[120px]"
+                        value={profile.type}
+                        onChange={(e) => updateProfile({ type: e.target.value })}
+                     />
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-3">
-                <button className="flex-1 h-14 rounded-2xl bg-surface-highest border border-border/50 flex items-center justify-center hover:bg-primary/10 hover:border-primary/30 transition-all">
-                  <Phone className="h-5 w-5 text-muted-foreground" />
-                </button>
-                <button className="flex-1 h-14 rounded-2xl bg-surface-highest border border-border/50 flex items-center justify-center hover:bg-primary/10 hover:border-primary/30 transition-all">
-                  <Mail className="h-5 w-5 text-muted-foreground" />
-                </button>
+                <div className="space-y-3 pt-4 border-t border-border/30">
+                  <div className="flex items-center gap-3 text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-[10px] bg-surface-highest flex items-center justify-center border border-border/50 shrink-0">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <span className="text-[13px] font-medium truncate">{profile.email || 'Initializing...'}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-muted-foreground group">
+                    <div className="w-8 h-8 rounded-[10px] bg-surface-highest flex items-center justify-center border border-border/50 shrink-0">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Add phone..."
+                      className="text-[13px] font-medium bg-transparent border-none outline-none hover:bg-surface-highest focus:bg-surface-highest rounded px-2 -ml-2 transition-colors w-full"
+                      value={profile.phone || ''}
+                      onChange={(e) => updateProfile({ phone: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -378,48 +511,70 @@ export default function Dashboard() {
                        {operationalStatus.timeLabel === b.id && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ring-4 ring-amber-500/20" />}
                      </div>
                    ))}
-                </div>
-              </div>
-            </div>
+                            </div>
+          </div>
+        </div>
 
-            {/* WORKING FORMAT (ENERGY COMPOSITION) */}
+          {/* WORKING FORMAT (ENERGY COMPOSITION) */}
             <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl flex flex-col">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-lg font-black tracking-tight text-foreground">Focus composition</h3>
                 <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
               </div>
 
-              <div className="flex-1 flex flex-col items-center justify-center relative min-h-[180px]">
-                {/* SVG DOUGHNUT CHART - Fixed Aspect Ratio */}
-                <svg 
-                  viewBox="0 0 176 176" 
-                  preserveAspectRatio="xMidYMid meet"
-                  className="w-44 h-44 shrink-0 transform -rotate-90"
-                >
-                   <circle cx="88" cy="88" r="70" stroke="currentColor" strokeWidth="20" fill="transparent" className="text-surface-highest/30" />
-                   <circle cx="88" cy="88" r="70" stroke="currentColor" strokeWidth="20" fill="transparent" strokeDasharray="440" strokeDashoffset="120" className="text-primary transition-all duration-1000" />
-                   <circle cx="88" cy="88" r="70" stroke="currentColor" strokeWidth="20" fill="transparent" strokeDasharray="440" strokeDashoffset="380" className="text-indigo-400 transition-all duration-1000" />
-                </svg>
-                <div className="absolute flex flex-col items-center justify-center text-center leading-none">
-                   <span className="text-3xl font-black text-foreground">418</span>
-                   <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mt-1">Operational<br/>Segments</span>
+              <div className="flex-1 flex flex-col items-center justify-center relative min-h-[220px]">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <RechartsTooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-surface-highest/90 backdrop-blur-md border border-border/50 p-3 rounded-2xl shadow-2xl flex flex-col gap-1 min-w-[140px] animate-in fade-in zoom-in-95">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                CLIENT: {data.name}
+                              </span>
+                              <div className="flex items-center justify-between mt-1">
+                                <span className="text-sm font-black text-foreground">{data.value} Hours</span>
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: data.fill }} />
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    {/* Simplified Single Ring: Company Distribution */}
+                    <Pie
+                      data={workCompositionData.inner}
+                      dataKey="value"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={65}
+                      outerRadius={95}
+                      paddingAngle={4}
+                      stroke="none"
+                      animationDuration={1500}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                
+                <div className="absolute flex flex-col items-center justify-center text-center leading-none pointer-events-none">
+                   <span className="text-3xl font-black text-foreground">{Math.round(workCompositionData.totalHours)}</span>
+                   <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground mt-1">Total Effort<br/>(Hours)</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-y-3 pt-6 border-t border-border/30 mt-6">
-                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">High Focus</span>
-                 </div>
-                 <div className="flex items-center justify-end text-[10px] font-black text-foreground">55%</div>
-                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-indigo-400" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Medium Focus</span>
-                 </div>
-                 <div className="flex items-center justify-end text-[10px] font-black text-foreground">35%</div>
-              </div>
+              {/* Dynamic Legend */}
+              <div className="flex flex-wrap gap-x-4 gap-y-2 pt-6 border-t border-border/30 mt-6 max-h-[100px] overflow-y-auto custom-scrollbar">
+                 {workCompositionData.inner.map((entry, index) => (
+                    <div key={`legend-${index}`} className="flex items-center gap-2">
+                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.fill }} />
+                       <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground whitespace-nowrap">{entry.name}</span>
+                    </div>
+                 ))}
+                            </div>
             </div>
-
           </div>
 
           {/* TASKS OVERVIEW (TIMELINE) */}
@@ -429,64 +584,121 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                    <Search className="h-4 w-4 text-muted-foreground mr-4" />
                    <div className="bg-surface-low p-1.5 rounded-2xl flex border border-border/30">
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <button 
-                          key={day}
-                          onClick={() => setActiveTab(day)}
-                          className={cn(
-                            "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                            activeTab === day ? "bg-primary text-background shadow-lg shadow-primary/20" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {day}
-                        </button>
-                      ))}
+                       {(() => {
+                         const _tabWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+                         const _dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                         const todayAbbr = _dayNames[new Date().getDay()];
+                         return _dayNames.map((day, idx) => {
+                           const _dayDate = addDays(_tabWeekStart, idx);
+                           const _hasTasks = tasks.some(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), _dayDate));
+                           return (
+                             <button
+                               key={day}
+                               onClick={() => setActiveTab(day)}
+                               className={cn(
+                                 'relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all',
+                                 activeTab === day ? 'bg-primary text-background shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'
+                               )}
+                             >
+                               {day}
+                               <span className={cn('text-[8px] font-bold opacity-60', activeTab === day ? 'text-background' : '')}>{format(_dayDate, 'dd')}</span>
+                               {_hasTasks && <span className={cn('absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full', activeTab === day ? 'bg-background/60' : 'bg-primary')} />}
+                             </button>
+                           );
+                         });
+                       })()}
                    </div>
                 </div>
              </div>
 
-             <div className="space-y-0 relative max-h-[400px] overflow-y-auto custom-scrollbar pr-4">
-                {/* Timeline Axis */}
-                <div className="absolute left-[3.5rem] top-0 bottom-0 w-px bg-border/20" />
-                
-                {[8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(hour => (
-                  <div key={hour} className="flex items-start h-20 group">
-                     <span className="w-14 text-[10px] font-black text-muted-foreground/30 pr-4 pt-1 transition-colors group-hover:text-primary">{hour}:00</span>
-                     <div className="flex-1 border-t border-border/5 mt-[10px] relative h-full">
-                        {/* Mock timeline events */}
-                        {hour === 12 && (
-                          <div className="absolute left-[10%] w-[45%] -top-4 bg-surface-highest border border-border/80 rounded-2xl p-4 shadow-xl z-20 flex items-center justify-between animate-in slide-in-from-left-4">
-                             <div className="flex items-center gap-4">
-                               <div className="flex -space-x-2">
-                                  {[1, 2, 3].map(i => <div key={i} className="w-6 h-6 rounded-full border-2 border-surface-highest bg-primary/20" />)}
+             <div className="relative max-h-[400px] overflow-y-auto custom-scrollbar pr-4">
+                 {(() => {
+                   const DAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+                   const targetDayNum = DAY_MAP[activeTab];
+                   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+                   const targetDate = addDays(weekStart, targetDayNum);
+                   const dayTasks = tasks
+                     .filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), targetDate))
+                     .sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? ''));
+                    const priorityWidth: Record<string, string> = { 'Low': '25%', 'Medium': '50%', 'High': '75%' };
+
+                   const TIMELINE_HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+                    const ROW_H = 60;
+                   return (
+                     <div className="relative" style={{ height: `${TIMELINE_HOURS.length * ROW_H}px` }}>
+                       <div className="absolute left-[3.5rem] top-0 bottom-0 w-px bg-border/20" />
+                       {TIMELINE_HOURS.map(hour => (
+                         <div key={hour} className="absolute w-full flex items-start" style={{ top: `${(hour - TIMELINE_HOURS[0]) * ROW_H}px`, height: `${ROW_H}px` }}>
+                           <span className="w-14 text-[10px] font-black text-muted-foreground/30 pr-4 pt-1 shrink-0">{hour}:00</span>
+                           <div className="flex-1 border-t border-border/5 h-full" />
+                         </div>
+                       ))}
+                       {dayTasks.length === 0 && (
+                         <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30">
+                           <Calendar className="w-10 h-10 text-muted-foreground mb-3" />
+                           <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">No tasks scheduled</p>
+                         </div>
+                       )}
+                       {dayTasks.map(task => {
+                         const startDate = parseISO(task.scheduledStart!);
+                         const startHour = startDate.getHours() + startDate.getMinutes() / 60;
+                         const topPx = (startHour - TIMELINE_HOURS[0]) * ROW_H;
+                          const heightPx = Math.max(30, task.estimatedDuration * ROW_H);
+                         const project = projects.find(p => p.id === task.projectId);
+                         const company = companies.find(c => c.id === project?.companyId);
+                          const leftOff = '3.5rem';
+                          const width   = priorityWidth[task.priority] ?? '50%';
+                         const projectColor = project?.color || company?.color || "#6366f1";
+                         const accentColor = projectColor;
+                         const isDone = task.status === 'Completed';
+                         return (
+                           <div
+                             key={task.id}
+                             className={cn(
+                               "absolute group transition-all duration-300 rounded-2xl border shadow-sm overflow-hidden",
+                               isDone 
+                                 ? "bg-surface-highest/20 border-border/10 opacity-40 grayscale-[0.5]" 
+                                 : "bg-white border-border/50 hover:shadow-lg hover:border-primary/20 hover:-translate-y-0.5"
+                             )}
+                             style={{ top: `${topPx}px`, height: `${heightPx}px`, left: leftOff, width, backgroundColor: isDone ? undefined : projectColor + "0D" }}
+                           >
+                             <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ backgroundColor: accentColor }} />
+                             <div className="flex items-center h-full pl-4 pr-3 gap-3">
+                               <button
+                                 onClick={() => updateTask(task.id, { status: isDone ? 'Scheduled' : 'Completed' })}
+                                 className={cn(
+                                   "shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110",
+                                   isDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-border/50 hover:border-emerald-400"
+                                 )}
+                               >
+                                 {isDone && <CheckCircle2 className="w-3.5 h-3.5" />}
+                               </button>
+                               <div className="flex-1 min-w-0">
+                                 <p className={cn(
+                                   "text-xs font-black tracking-tight leading-tight truncate transition-all duration-300", 
+                                   isDone ? "text-emerald-500/70 line-through decoration-emerald-500/30" : "text-foreground"
+                                 )}>
+                                   {task.name}
+                                 </p>
+                                 {heightPx > 54 && (
+                                   <p className="text-[9px] text-muted-foreground font-medium mt-0.5 truncate">
+                                     {company?.name ?? 'Unknown'}{project ? ` Â· ${project.name}` : ''}
+                                   </p>
+                                 )}
                                </div>
-                               <div className="leading-tight">
-                                  <p className="text-xs font-bold text-foreground">Tactical Alignment</p>
-                                  <p className="text-[9px] text-muted-foreground">Synchronizing with client nodes</p>
+                               <div className="shrink-0 flex flex-col items-end gap-1">
+                                 <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full", task.priority === 'High' ? 'bg-rose-500/10 text-rose-500' : task.priority === 'Medium' ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-muted-foreground')}>{task.priority}</span>
+                                 <span className="text-[9px] font-black text-muted-foreground/50">{task.estimatedDuration}h</span>
                                </div>
                              </div>
-                             <div className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
-                          </div>
-                        )}
-                        {hour === 15 && (
-                          <div className="absolute left-[20%] w-[55%] -top-4 bg-primary rounded-2xl p-4 shadow-xl z-10 flex items-center justify-between text-background animate-in slide-in-from-right-4">
-                             <div className="flex items-center gap-4">
-                               <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
-                                  <CheckCircle2 className="h-4 w-4" />
-                                </div>
-                               <div className="leading-tight">
-                                  <p className="text-xs font-black">Strategic Overhaul</p>
-                                  <p className="text-[9px] opacity-70">Refining architectural primitives</p>
-                               </div>
-                             </div>
-                             <span className="text-[9px] font-black uppercase opacity-60">High Priority</span>
-                          </div>
-                        )}
+                           </div>
+                         );
+                       })}
                      </div>
-                  </div>
-                ))}
-             </div>
-          </div>
+                   );
+                 })()}
+              </div>
+           </div>
 
         </div>
 
@@ -607,6 +819,34 @@ export default function Dashboard() {
 
       </div>
 
+      {cropImageSrc && (
+         <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
+            <div className="relative w-full max-w-2xl h-[400px] bg-slate-900 rounded-[32px] overflow-hidden mb-8 shadow-2xl">
+               <Cropper
+                  image={cropImageSrc || undefined}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={4 / 5}
+                  onCropChange={setCrop}
+                  onCropComplete={(_, croppedPixels) => setCroppedAreaPixels(croppedPixels)}
+                  onZoomChange={setZoom}
+               />
+            </div>
+            <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md p-4 rounded-3xl">
+               <button onClick={() => setCropImageSrc(null)} className="px-6 py-3 text-xs font-bold text-white/70 hover:text-white transition-colors uppercase tracking-widest">
+                  Cancel
+               </button>
+               <button onClick={handleApplyCrop} disabled={isUploadingAvatar} className="flex items-center gap-2 px-8 py-3 bg-primary text-white text-xs font-bold rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                  {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+                  Apply Crop
+               </button>
+            </div>
+         </div>
+      )}
+
     </div>
   );
 }
+
+
+
