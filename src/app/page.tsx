@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -25,7 +25,11 @@ import {
   User,
   Camera,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Coffee,
+  Utensils,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { 
   PieChart, 
@@ -50,7 +54,12 @@ import {
   setMinutes,
   addMinutes,
   differenceInMinutes,
-  differenceInSeconds
+  differenceInSeconds,
+  eachDayOfInterval,
+  isWeekend,
+  isSameMonth,
+  addMonths,
+  subMonths
 } from 'date-fns';
 import { cn, generateId } from '@/lib/utils';
 import Cropper from 'react-easy-crop';
@@ -60,7 +69,24 @@ import { useRef } from 'react';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { profile, updateProfile, tasks, companies, projects, updateTask } = useStore();
+  const { profile, updateProfile, tasks, updateTask, companies, projects, fetchData } = useStore();
+  const [viewingMonth, setViewingMonth] = useState(new Date());
+
+  // Derived ranges based on viewingMonth
+  const monthRange = useMemo(() => ({ 
+    start: startOfMonth(viewingMonth), 
+    end: endOfMonth(viewingMonth) 
+  }), [viewingMonth]);
+
+  const weekRange = useMemo(() => {
+    const isViewingCurrentMonth = isSameMonth(viewingMonth, new Date());
+    const weekBase = isViewingCurrentMonth ? new Date() : startOfMonth(viewingMonth);
+    return { 
+      start: startOfWeek(weekBase, { weekStartsOn: 1 }), 
+      end: endOfWeek(weekBase, { weekStartsOn: 1 }) 
+    };
+  }, [viewingMonth]);
+
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -122,11 +148,26 @@ export default function Dashboard() {
     }
   };
 
+  const toggleVacationDay = (day: Date) => {
+    if (!profile) return;
+    const iso = day.toISOString();
+    const isExistent = profile.vacationDays?.some(v => isSameDay(parseISO(v), day));
+    const nextDays = isExistent
+      ? profile.vacationDays?.filter(v => !isSameDay(parseISO(v), day))
+      : [...(profile.vacationDays || []), iso];
+    updateProfile({ vacationDays: nextDays });
+  };
+
   // Financial Orchestration Calculations
   const metrics = useMemo(() => {
-    const now = new Date();
-    const weekRange = { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
-    const monthRange = { start: startOfMonth(now), end: endOfMonth(now) };
+    const totalMonthDays = eachDayOfInterval({ start: monthRange.start, end: monthRange.end });
+    const workingDaysCount = totalMonthDays.filter(day => 
+      !isWeekend(day) && 
+      !profile?.vacationDays?.some(v => isSameDay(parseISO(v), day))
+    ).length;
+
+    const totalWeekdays = totalMonthDays.filter(day => !isWeekend(day)).length;
+    const workingRatio = workingDaysCount / Math.max(1, totalWeekdays);
 
     const calculateEarnings = (taskList: typeof tasks) => {
       return taskList.reduce((acc, task) => {
@@ -139,18 +180,55 @@ export default function Dashboard() {
       }, 0);
     };
 
+    // Calculate projected monthly income from active contracts vs. tasks
+    const activeCompanies = companies.filter(c => {
+      const monthKey = format(viewingMonth, 'yyyy-MM');
+      return !c.pausedMonths?.includes(monthKey);
+    });
+
+    const monthlyContractIncome = activeCompanies.reduce((acc, company) => {
+      const weeklyIncome = (company.contractHours || 0) * (company.hourlyRate || 0);
+      return acc + (weeklyIncome * 4.33); // Average weeks per month
+    }, 0);
+
     const weekTasks = tasks.filter(t => t.scheduledStart && isWithinInterval(parseISO(t.scheduledStart), weekRange));
     const monthTasks = tasks.filter(t => t.scheduledStart && isWithinInterval(parseISO(t.scheduledStart), monthRange));
     
-    // Yearly is projected based on weekly average or just a flat sum of current tasks
-    const yearlyProjected = calculateEarnings(tasks) * (52 / Math.max(1, tasks.length / 10 || 1));
+    // Filter out tasks from paused companies for this month
+    const activeMonthTasks = monthTasks.filter(t => {
+      const project = projects.find(p => p.id === t.projectId);
+      const company = activeCompanies.find(c => c.id === project?.companyId);
+      return !!company;
+    });
+    
+    const monthRealized = activeMonthTasks
+      .filter(t => t.status === 'Completed')
+      .reduce((acc, task) => {
+        const project = projects.find(p => p.id === task.projectId);
+        const company = companies.find(c => c.id === project?.companyId);
+        if (!company || !company.hourlyRate) return acc;
+        
+        const duration = task.estimatedDuration || 1;
+        return acc + (duration * company.hourlyRate);
+      }, 0);
+
+    // Calculate the target baseline (either from contracts or current scheduled tasks)
+    const baselineIncome = monthlyContractIncome > 0 ? monthlyContractIncome : calculateEarnings(activeMonthTasks);
+    const projectedMonth = baselineIncome * workingRatio;
+
+    // Yearly is projected based on the current adjusted month
+    const yearlyProjected = projectedMonth * 12;
 
     return {
       week: calculateEarnings(weekTasks),
-      month: calculateEarnings(monthTasks),
-      year: yearlyProjected
+      month: projectedMonth,
+      monthRealized,
+      targetProgress: projectedMonth > 0 ? (monthRealized / projectedMonth) * 100 : 0,
+      year: yearlyProjected,
+      workingDaysCount,
+      workingRatio
     };
-  }, [tasks, companies, projects]);
+  }, [tasks, companies, projects, profile?.vacationDays, viewingMonth, monthRange, weekRange]);
 
   const workCompositionData = useMemo(() => {
     const inner: any[] = [];
@@ -261,8 +339,6 @@ export default function Dashboard() {
 
   if (!mounted || !profile) return null;
 
-  const today = new Date();
-
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-1000 pb-20">
       
@@ -270,11 +346,10 @@ export default function Dashboard() {
       <div className="flex items-center justify-between gap-8 mb-4">
         <div className="flex flex-col">
           <span className="text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em] mb-1">
-            {format(today, 'EEEE, dd MMM')}
+            {format(currentTime, 'EEEE, dd MMM')}
           </span>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black tracking-tight text-foreground">Digital Atelier</h1>
-            <span className="text-muted-foreground/30 font-light">Ã¢â‚¬Â¢</span>
             <span className="text-primary font-bold text-sm">Strategic Node</span>
           </div>
         </div>
@@ -287,29 +362,41 @@ export default function Dashboard() {
             className="w-full bg-surface-low border border-border/50 rounded-full py-3.5 pl-14 pr-6 text-sm focus:border-primary/50 outline-none transition-all shadow-inner"
           />
         </div>
-
-        <div className="flex items-center gap-4">
-          <button className="w-12 h-12 rounded-full bg-surface-low border border-border/50 flex items-center justify-center relative hover:bg-surface-high transition-colors">
-            <Bell className="h-5 w-5 text-foreground" />
-            <div className="absolute top-3 right-3 w-2 h-2 bg-rose-500 rounded-full border-2 border-background" />
-          </button>
-          <div className="flex items-center gap-3 pl-4 border-l border-border/30">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-black text-foreground leading-none">{profile.name}</p>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">{profile.type}</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 border-2 border-primary/20 flex items-center justify-center overflow-hidden">
-               {profile.avatarUrl ? (
-                 <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-               ) : (
-                 <Zap className="h-6 w-6 text-primary" />
-               )}
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* DASHBOARD GRID */}
+        {/* MONTHLY ACTION REMINDER */}
+        {(() => {
+          const today = new Date();
+          const isFirstDay = today.getDate() === 1;
+          // Show reminder if it's the first day OR if no vacation days are set for the current month
+          const monthStart = startOfMonth(today);
+          const hasMonthData = profile?.vacationDays?.some(v => isSameMonth(parseISO(v), monthStart));
+          
+          if (isFirstDay || !hasMonthData) {
+            return (
+              <div className="mb-8 bg-primary/10 border border-primary/20 rounded-[30px] p-6 flex items-center justify-between animate-in fade-in slide-in-from-top duration-700">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+                    <Calendar className="w-6 h-6 text-background" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-foreground">Operational Strategy Required</h4>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Please confirm your working days for {format(today, 'MMMM')} to optimize forecasts.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => router.push('/settings')}
+                  className="px-6 py-3 bg-primary text-background rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+                >
+                  Configure Schedule
+                </button>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
+        {/* TOP METRICS GRID */}
       <div className="grid grid-cols-12 gap-6 items-start">
         
         {/* LEFT COLUMN: IDENTITY & METRICS */}
@@ -613,90 +700,182 @@ export default function Dashboard() {
 
              <div className="relative max-h-[400px] overflow-y-auto custom-scrollbar pr-4">
                  {(() => {
-                   const DAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-                   const targetDayNum = DAY_MAP[activeTab];
-                   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
-                   const targetDate = addDays(weekStart, targetDayNum);
-                   const dayTasks = tasks
-                     .filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), targetDate))
-                     .sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? ''));
-                    const priorityWidth: Record<string, string> = { 'Low': '25%', 'Medium': '50%', 'High': '75%' };
-
-                   const TIMELINE_HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+                    const DAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+                    const targetDayNum = DAY_MAP[activeTab];
+                    const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+                    const targetDate = addDays(weekStart, targetDayNum);
+                    const dayTasks = tasks
+                      .filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), targetDate))
+                      .sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? ''));
+                    const priorityWeights: Record<string, number> = { 'Low': 0, 'Medium': 1, 'High': 2 };
                     const ROW_H = 60;
-                   return (
-                     <div className="relative" style={{ height: `${TIMELINE_HOURS.length * ROW_H}px` }}>
-                       <div className="absolute left-[3.5rem] top-0 bottom-0 w-px bg-border/20" />
-                       {TIMELINE_HOURS.map(hour => (
-                         <div key={hour} className="absolute w-full flex items-start" style={{ top: `${(hour - TIMELINE_HOURS[0]) * ROW_H}px`, height: `${ROW_H}px` }}>
-                           <span className="w-14 text-[10px] font-black text-muted-foreground/30 pr-4 pt-1 shrink-0">{hour}:00</span>
-                           <div className="flex-1 border-t border-border/5 h-full" />
-                         </div>
-                       ))}
-                       {dayTasks.length === 0 && (
-                         <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30">
-                           <Calendar className="w-10 h-10 text-muted-foreground mb-3" />
-                           <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">No tasks scheduled</p>
-                         </div>
-                       )}
-                       {dayTasks.map(task => {
-                         const startDate = parseISO(task.scheduledStart!);
-                         const startHour = startDate.getHours() + startDate.getMinutes() / 60;
-                         const topPx = (startHour - TIMELINE_HOURS[0]) * ROW_H;
-                          const heightPx = Math.max(30, task.estimatedDuration * ROW_H);
-                         const project = projects.find(p => p.id === task.projectId);
-                         const company = companies.find(c => c.id === project?.companyId);
-                          const leftOff = '3.5rem';
-                          const width   = priorityWidth[task.priority] ?? '50%';
-                         const projectColor = project?.color || company?.color || "#6366f1";
-                         const accentColor = projectColor;
-                         const isDone = task.status === 'Completed';
-                         return (
-                           <div
-                             key={task.id}
-                             className={cn(
-                               "absolute group transition-all duration-300 rounded-2xl border shadow-sm overflow-hidden",
-                               isDone 
-                                 ? "bg-surface-highest/20 border-border/10 opacity-40 grayscale-[0.5]" 
-                                 : "bg-white border-border/50 hover:shadow-lg hover:border-primary/20 hover:-translate-y-0.5"
-                             )}
-                             style={{ top: `${topPx}px`, height: `${heightPx}px`, left: leftOff, width, backgroundColor: isDone ? undefined : projectColor + "0D" }}
-                           >
-                             <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ backgroundColor: accentColor }} />
-                             <div className="flex items-center h-full pl-4 pr-3 gap-3">
-                               <button
-                                 onClick={() => updateTask(task.id, { status: isDone ? 'Scheduled' : 'Completed' })}
-                                 className={cn(
-                                   "shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110",
-                                   isDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-border/50 hover:border-emerald-400"
-                                 )}
-                               >
-                                 {isDone && <CheckCircle2 className="w-3.5 h-3.5" />}
-                               </button>
-                               <div className="flex-1 min-w-0">
-                                 <p className={cn(
-                                   "text-xs font-black tracking-tight leading-tight truncate transition-all duration-300", 
-                                   isDone ? "text-emerald-500/70 line-through decoration-emerald-500/30" : "text-foreground"
-                                 )}>
-                                   {task.name}
-                                 </p>
-                                 {heightPx > 54 && (
-                                   <p className="text-[9px] text-muted-foreground font-medium mt-0.5 truncate">
-                                     {company?.name ?? 'Unknown'}{project ? ` Â· ${project.name}` : ''}
-                                   </p>
-                                 )}
-                               </div>
-                               <div className="shrink-0 flex flex-col items-end gap-1">
-                                 <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full", task.priority === 'High' ? 'bg-rose-500/10 text-rose-500' : task.priority === 'Medium' ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-muted-foreground')}>{task.priority}</span>
-                                 <span className="text-[9px] font-black text-muted-foreground/50">{task.estimatedDuration}h</span>
-                               </div>
-                             </div>
-                           </div>
-                         );
-                       })}
-                     </div>
-                   );
-                 })()}
+                    const TIMELINE_HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+
+                    const parseTime = (timeStr: string) => {
+                      const [h, m] = timeStr.split(':').map(Number);
+                      return h + m / 60;
+                    };
+
+                    const timeOffItems = [
+                      ...(profile?.lunchTime ? [{
+                        id: 'lunch',
+                        name: 'Lunch Time',
+                        startTime: parseTime(profile.lunchTime.start),
+                        endTime: parseTime(profile.lunchTime.start) + profile.lunchTime.durationMinutes / 60,
+                        isTimeOff: true,
+                        type: 'Lunch'
+                      }] : []),
+                      ...(profile?.customBreaks || []).map(b => ({
+                        id: b.id,
+                        name: 'Break',
+                        startTime: parseTime(b.start),
+                        endTime: parseTime(b.start) + b.durationMinutes / 60,
+                        isTimeOff: true,
+                        type: 'Break'
+                      }))
+                    ];
+
+                    const tasksWithTime = dayTasks.map(t => {
+                      const start = parseISO(t.scheduledStart!);
+                      const startTime = start.getHours() + start.getMinutes() / 60;
+                      const visualDuration = Math.max(t.estimatedDuration, 30 / ROW_H);
+                      const endTime = startTime + visualDuration;
+                      const project = projects.find(p => p.id === t.projectId);
+                      const company = companies.find(c => c.id === project?.companyId);
+                      return { ...t, startTime, endTime, project, company, isTimeOff: false };
+                    });
+
+                    const allTimelineItems = [...tasksWithTime, ...timeOffItems]
+                      .sort((a, b) => a.startTime - b.startTime);
+
+                    const clusters: any[][] = [];
+                    let currentCluster: any[] = [];
+                    let clusterEndTime = 0;
+
+                    allTimelineItems.forEach(item => {
+                      if (currentCluster.length > 0 && item.startTime < clusterEndTime - 0.01) {
+                        currentCluster.push(item);
+                        clusterEndTime = Math.max(clusterEndTime, item.endTime);
+                      } else {
+                        if (currentCluster.length > 0) clusters.push(currentCluster);
+                        currentCluster = [item];
+                        clusterEndTime = item.endTime;
+                      }
+                    });
+                    if (currentCluster.length > 0) clusters.push(currentCluster);
+
+                    return (
+                      <div className="relative" style={{ height: `${TIMELINE_HOURS.length * ROW_H}px` }}>
+                        <div className="absolute left-[3.5rem] top-0 bottom-0 w-px bg-border/20" />
+                        {TIMELINE_HOURS.map(hour => (
+                          <div key={hour} className="absolute w-full flex items-start" style={{ top: `${(hour - TIMELINE_HOURS[0]) * ROW_H}px`, height: `${ROW_H}px` }}>
+                            <span className="w-14 text-[10px] font-black text-muted-foreground/30 pr-4 pt-1 shrink-0">{hour}:00</span>
+                            <div className="flex-1 border-t border-border/5 h-full" />
+                          </div>
+                        ))}
+                        {allTimelineItems.length === 0 && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30">
+                            <Calendar className="w-10 h-10 text-muted-foreground mb-3" />
+                            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">No tasks scheduled</p>
+                          </div>
+                        )}
+                        {clusters.map((cluster) => {
+                          const sortedCluster = [...cluster].sort((a, b) => {
+                            if (a.isTimeOff && !b.isTimeOff) return -1;
+                            if (!a.isTimeOff && b.isTimeOff) return 1;
+                            const weightA = priorityWeights[a.priority as string] ?? 0;
+                            const weightB = priorityWeights[b.priority as string] ?? 0;
+                            if (weightA !== weightB) return weightA - weightB;
+                            return a.startTime - b.startTime;
+                          });
+
+                          return sortedCluster.map((item, index) => {
+                            const topPx = (item.startTime - TIMELINE_HOURS[0]) * ROW_H;
+                            const duration = item.isTimeOff ? (item.endTime - item.startTime) : item.estimatedDuration;
+                            const heightPx = Math.max(30, duration * ROW_H);
+                            const clusterSize = cluster.length;
+                            const width = `calc((100% - 3.75rem) / ${clusterSize})`;
+                            const left = `calc(3.5rem + (100% - 3.75rem) * ${index} / ${clusterSize})`;
+
+                            if (item.isTimeOff) {
+                              return (
+                                <div
+                                  key={`timeoff-${item.id}`}
+                                  className="absolute group transition-all duration-300 rounded-2xl border border-border/20 bg-surface-highest/10 backdrop-blur-sm overflow-hidden"
+                                  style={{ top: `${topPx}px`, height: `${heightPx}px`, left, width }}
+                                >
+                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-muted-foreground/20" />
+                                  <div className="flex items-center h-full pl-4 pr-3 gap-3">
+                                    <div className="shrink-0 w-6 h-6 rounded-full border border-border/20 flex items-center justify-center text-muted-foreground/40">
+                                      {item.type === 'Lunch' ? <Utensils className="w-3 h-3" /> : <Coffee className="w-3 h-3" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 truncate">
+                                        {item.name}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            const task = item;
+                            const projectColor = task.project?.color || task.company?.color || "#6366f1";
+                            const isDone = task.status === 'Completed';
+
+                            return (
+                              <div
+                                key={task.id}
+                                className={cn(
+                                  "absolute group transition-all duration-300 rounded-2xl border shadow-sm overflow-hidden",
+                                  isDone 
+                                    ? "bg-surface-highest/20 border-border/10 opacity-40 grayscale-[0.5]" 
+                                    : "bg-white border-border/50 hover:shadow-lg hover:border-primary/20 hover:-translate-y-0.5"
+                                )}
+                                style={{ 
+                                  top: `${topPx}px`, 
+                                  height: `${heightPx}px`, 
+                                  left: left, 
+                                  width: width, 
+                                  backgroundColor: isDone ? undefined : projectColor + "0D" 
+                                }}
+                              >
+                                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl" style={{ backgroundColor: projectColor }} />
+                                <div className="flex items-center h-full pl-4 pr-3 gap-3">
+                                  <button
+                                    onClick={() => updateTask(task.id, { status: isDone ? 'Scheduled' : 'Completed' })}
+                                    className={cn(
+                                      "shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110",
+                                      isDone ? "bg-emerald-500 border-emerald-500 text-white" : "border-border/50 hover:border-emerald-400"
+                                    )}
+                                  >
+                                    {isDone && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <div className="flex-1 min-w-0">
+                                    <p className={cn(
+                                      "text-xs font-black tracking-tight leading-tight truncate transition-all duration-300", 
+                                      isDone ? "text-emerald-500/70 line-through decoration-emerald-500/30" : "text-foreground"
+                                    )}>
+                                      {task.name}
+                                    </p>
+                                    {heightPx > 54 && (
+                                      <p className="text-[9px] text-muted-foreground font-medium mt-0.5 truncate">
+                                        {task.company?.name ?? 'Unknown'}{task.project ? ` · ${task.project.name}` : ''}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="shrink-0 flex flex-col items-end gap-1">
+                                    <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full", task.priority === 'High' ? 'bg-rose-500/10 text-rose-500' : task.priority === 'Medium' ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-muted-foreground')}>{task.priority}</span>
+                                    <span className="text-[9px] font-black text-muted-foreground/50">{task.estimatedDuration}h</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })}
+                      </div>
+                    );
+                  })()}
               </div>
            </div>
 
@@ -705,75 +884,149 @@ export default function Dashboard() {
         {/* RIGHT COLUMN: HUB METRICS & PLATFORMS */}
         <div className="col-span-12 lg:col-span-3 space-y-6">
           
-          {/* LOAD ACTIVITY HEATMAP */}
-          <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl">
-             <div className="flex items-center justify-between mb-8">
-                <h3 className="text-lg font-black tracking-tight text-foreground leading-none">Operational Load</h3>
-                <span className="text-[9px] font-black bg-primary/10 text-primary px-3 py-1.5 rounded-full uppercase tracking-widest whitespace-nowrap">79% Avg</span>
-             </div>
+           {/* OPERATIONAL WORK CALENDAR */}
+           <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl">
+              <div className="flex items-center justify-between mb-8">
+                 <div>
+                   <h3 className="text-lg font-black tracking-tight text-foreground leading-none">Work Availability</h3>
+                   <div className="flex items-center gap-3 mt-2">
+                      <button 
+                         onClick={() => setViewingMonth(subMonths(viewingMonth, 1))}
+                         className="p-1 hover:bg-surface-highest rounded-lg transition-colors text-muted-foreground"
+                      >
+                         <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <p className="text-[10px] font-black text-primary uppercase tracking-widest min-w-[80px] text-center">
+                         {format(viewingMonth, 'MMM yyyy')}
+                      </p>
+                      <button 
+                         onClick={() => setViewingMonth(addMonths(viewingMonth, 1))}
+                         className="p-1 hover:bg-surface-highest rounded-lg transition-colors text-muted-foreground"
+                      >
+                         <ChevronRight className="w-4 h-4" />
+                      </button>
+                   </div>
+                 </div>
+                 <div className="flex flex-col items-end gap-1">
+                   <span className="text-[9px] font-black bg-primary/10 text-primary px-3 py-1.5 rounded-full uppercase tracking-widest whitespace-nowrap">{metrics.workingDaysCount} Days Active</span>
+                   <span className="text-[8px] font-bold text-muted-foreground/40 italic">Click to toggle Off-days</span>
+                 </div>
+              </div>
 
-             <div className="grid grid-cols-7 gap-3 mb-8">
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                   <div key={i} className="flex flex-col items-center gap-4">
-                      <span className="text-[10px] font-black text-muted-foreground/30 uppercase">{day}</span>
-                      <div className="grid grid-rows-12 gap-2">
-                         {Array.from({length: 12}).map((_, j) => {
-                            const active = Math.random() > 0.65;
-                            const level = Math.random();
-                            return (
-                              <div key={j} className={cn(
-                                "w-6 h-6 rounded-lg transition-all duration-300",
-                                active ? (level > 0.6 ? "bg-primary shadow-[0_0_15px_rgba(155,164,249,0.3)]" : "bg-primary/40") : "bg-surface-highest/30"
-                              )} />
-                            );
-                         })}
-                      </div>
-                   </div>
-                ))}
-             </div>
+              <div className="grid grid-cols-7 gap-2 mb-6">
+                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                   <span key={day} className="text-[10px] font-black text-muted-foreground/20 text-center uppercase">{day[0]}</span>
+                 ))}
+                 {(() => {
+                   const monthStart = startOfMonth(viewingMonth);
+                   const monthEnd = endOfMonth(monthStart);
+                   const calendarDays = eachDayOfInterval({
+                     start: startOfWeek(monthStart, { weekStartsOn: 0 }),
+                     end: endOfWeek(monthEnd, { weekStartsOn: 0 })
+                   });
 
-             <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 italic">
-                <span>08:00</span>
-                <span>Structural Threshold</span>
-                <span>18:00</span>
-             </div>
-          </div>
+                   return calendarDays.map((day, i) => {
+                     const isCurrentMonth = isSameMonth(day, monthStart);
+                     const isOff = isWeekend(day) || profile?.vacationDays?.some(v => isSameDay(parseISO(v), day));
+                     const isVacation = profile?.vacationDays?.some(v => isSameDay(parseISO(v), day));
+                     const isToday = isSameDay(day, new Date());
 
-          {/* FINANCIAL HUB */}
-          <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl space-y-10">
-             <div className="space-y-1">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Earnings Hub</h3>
-                <div className="flex items-baseline gap-2 leading-none">
-                   <span className="text-4xl font-black text-foreground tracking-tighter">${metrics.month.toLocaleString()}</span>
-                   <span className="text-muted-foreground text-sm font-bold">/ Mo</span>
-                </div>
-                <div className="flex items-center gap-2 pt-2 text-[10px] font-bold text-emerald-400">
-                   <TrendingUp className="h-3 w-3" />
-                   <span>Projected Forecast</span>
-                </div>
-             </div>
+                     return (
+                       <button
+                         key={i}
+                         onClick={() => isCurrentMonth && toggleVacationDay(day)}
+                         className={cn(
+                           "aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-300 border relative group",
+                           !isCurrentMonth ? "opacity-10 pointer-events-none" : "hover:scale-105",
+                           isOff 
+                             ? isVacation 
+                                ? "bg-rose-500/10 border-rose-500/20 text-rose-500" 
+                                : "bg-surface-highest/20 border-border/5 text-muted-foreground/30"
+                             : "bg-surface-highest/5 border-border/10 text-foreground shadow-sm hover:shadow-md",
+                           isToday && "ring-2 ring-primary ring-offset-4 ring-offset-surface-high"
+                         )}
+                       >
+                         <span className="text-[11px] font-black">{format(day, 'd')}</span>
+                         {!isOff && isCurrentMonth && <Zap className="w-2 h-2 text-primary absolute bottom-1 active:animate-ping" />}
+                       </button>
+                     );
+                   });
+                 })()}
+              </div>
 
-             <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                   <div className="space-y-1">
-                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Weekly Allocation</p>
-                      <p className="text-xl font-black text-foreground">${metrics.week.toLocaleString()}</p>
+              <div className="flex items-center justify-between pt-4 border-t border-border/5">
+                 <div className="flex items-center gap-4">
+                   <div className="flex items-center gap-1.5">
+                     <div className="w-2 h-2 rounded-full bg-primary" />
+                     <span className="text-[8px] font-black uppercase tracking-tighter text-muted-foreground/50">Working</span>
                    </div>
-                   <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                      <Calendar className="h-5 w-5 text-primary" />
+                   <div className="flex items-center gap-1.5">
+                     <div className="w-2 h-2 rounded-full bg-rose-500/40" />
+                     <span className="text-[8px] font-black uppercase tracking-tighter text-muted-foreground/50">Off</span>
                    </div>
-                </div>
-                <div className="flex items-center justify-between">
-                   <div className="space-y-1">
-                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Monthly Realized</p>
-                      <p className="text-xl font-black text-foreground">${(metrics.month * 0.45).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
-                   </div>
-                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                      <DollarSign className="h-5 w-5 text-emerald-400" />
-                   </div>
-                </div>
-             </div>
-          </div>
+                 </div>
+                 <span className="text-[9px] font-black text-muted-foreground/30 italic">Target: 22 Days/Mo</span>
+              </div>
+           </div>
+
+           {/* FINANCIAL HUB */}
+           <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl space-y-10">
+              <div className="grid grid-cols-2 gap-8 divide-x divide-border/5">
+                 {/* LEFT: TARGET FORECAST */}
+                 <div className="space-y-1">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Target Set</h3>
+                    <div className="flex items-baseline gap-2 leading-none">
+                       <span className="text-3xl font-black text-foreground tracking-tighter">${metrics.month.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 text-[8px] font-bold text-muted-foreground/60">
+                       <TrendingUp className="h-3 w-3 text-primary" />
+                       <span>Projected Forecast</span>
+                    </div>
+                 </div>
+
+                 {/* RIGHT: REALIZED INCOME */}
+                 <div className="pl-8 space-y-1">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Realized Hub</h3>
+                    <div className="flex items-baseline gap-2 leading-none">
+                       <span className="text-3xl font-black text-foreground tracking-tighter">
+                          ${metrics.monthRealized.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                       </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 text-[8px] font-bold text-muted-foreground/60">
+                       <DollarSign className="h-3 w-3 text-emerald-500" />
+                       <span>Completed Portfolio</span>
+                    </div>
+                 </div>
+              </div>
+
+              {/* TARGET PROGRESS VISUAL */}
+              <div className="space-y-3">
+                 <div className="flex justify-between items-end">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Target Alignment</span>
+                    <span className="text-xl font-black text-emerald-500 tracking-tighter">
+                       {Math.min(100, Math.round(metrics.targetProgress))}%
+                    </span>
+                 </div>
+                 <div className="h-2 w-full bg-surface-highest/20 rounded-full overflow-hidden border border-border/5">
+                    <div 
+                       className={`h-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all duration-1000 ease-out`}
+                       style={{ width: `${Math.min(100, metrics.targetProgress)}%` }}
+                    />
+                 </div>
+              </div>
+
+              <div className="space-y-6">
+                 <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                       <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none">Weekly Allocation</p>
+                       <h4 className="text-xl font-black text-foreground tracking-tight">${metrics.week.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary/40 border border-primary/10">
+                       <Calendar className="w-5 h-5" />
+                    </div>
+                 </div>
+              </div>
+           </div>
 
           {/* SYNERGY ALLOCATION */}
           <div className="bg-surface-high rounded-[40px] p-8 border border-border/50 shadow-xl">

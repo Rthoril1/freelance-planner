@@ -17,6 +17,7 @@ create table public.profiles (
   "lunchTime" jsonb,
   "customBreaks" jsonb,
   "avatarUrl" text,
+  "vacationDays" jsonb default '[]'::jsonb,
   "customPlatforms" jsonb default '[]'::jsonb,
   "hiddenPresetIds" jsonb default '[]'::jsonb,
   "platformsInitialized" boolean default false
@@ -65,6 +66,7 @@ alter table public.companies add column if not exists logo_url text;
 alter table public.companies add column if not exists banner_url text;
 alter table public.companies add column if not exists hourly_rate numeric default 0;
 alter table public.companies add column if not exists currency_code text default 'USD';
+alter table public.companies add column if not exists "contractHours" numeric default 0;
 
 
 -- 3. Projects Table

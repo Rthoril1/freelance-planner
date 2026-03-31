@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 
 import { useState, useRef } from 'react';
 import { useStore } from '@/store/useStore';
-import { Plus, Trash2, Building2, MoreVertical, Zap, FolderKanban, ArrowRight, ArrowLeft, X, Camera, Image as ImageIcon, Loader2, Calendar, CheckCircle2, Circle, ListTodo, Activity } from 'lucide-react';
+import { Plus, Trash2, Building2, MoreVertical, Zap, ZapOff, FolderKanban, ArrowRight, ArrowLeft, X, Camera, Image as ImageIcon, Loader2, Calendar, CheckCircle2, Circle, ListTodo, Activity } from 'lucide-react';
 import { format, isThisMonth } from 'date-fns';
 import { generateId } from '@/lib/utils';
 import { TacticalColorPicker } from '@/components/ui/TacticalColorPicker';
@@ -178,16 +178,68 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                   </div>
                </div>
                
-               <div className="hidden xl:flex bg-slate-50 rounded-[24px] px-6 py-4 items-center gap-5 border border-slate-100">
-                  <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                     <Activity className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex flex-col">
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Initiatives</span>
-                     <span className="text-2xl font-black text-slate-900 leading-none">{companyProjects.length}</span>
-                  </div>
-               </div>
-           </div>
+                <div className="bg-slate-50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 focus-within:ring-4 ring-primary/10 transition-shadow">
+                   <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                      <FolderKanban className="w-6 h-6 text-primary" />
+                   </div>
+                   <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-bold">Weekly Contract</span>
+                      <div className="flex items-center gap-1">
+                         <input 
+                            type="number"
+                            className="bg-transparent border-none outline-none font-black text-2xl text-slate-900 w-20 p-0 leading-none h-auto focus:ring-0"
+                            value={company.contractHours || 0}
+                            onChange={(e) => updateCompany(company.id, { contractHours: Number(e.target.value) })}
+                         />
+                         <span className="text-slate-400 font-black text-[10px] mt-1 tracking-widest uppercase">HRS</span>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="hidden xl:flex bg-slate-50 rounded-[24px] px-6 py-4 items-center gap-5 border border-slate-100">
+                   <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                      <Activity className="w-6 h-6 text-primary" />
+                   </div>
+                   <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Initiatives</span>
+                      <span className="text-2xl font-black text-slate-900 leading-none">{companyProjects.length}</span>
+                   </div>
+                </div>
+
+                {/* MONTHLY PAUSE TOGGLE */}
+                {(() => {
+                   const currMonthKey = format(new Date(), 'yyyy-MM');
+                   const isPaused = company.pausedMonths?.includes(currMonthKey);
+                   return (
+                      <button 
+                         onClick={() => {
+                            const current = company.pausedMonths || [];
+                            const updated = isPaused 
+                               ? current.filter(m => m !== currMonthKey)
+                               : [...current, currMonthKey];
+                            updateCompany(company.id, { pausedMonths: updated });
+                         }}
+                         className={cn(
+                            "flex items-center gap-4 px-6 py-4 rounded-[24px] border transition-all duration-300",
+                            isPaused 
+                               ? "bg-rose-50 border-rose-100 text-rose-600 shadow-inner" 
+                               : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:shadow-md"
+                         )}
+                      >
+                         <div className={cn(
+                            "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
+                            isPaused ? "bg-rose-500 text-white" : "bg-emerald-500 text-white"
+                         )}>
+                            {isPaused ? <ZapOff className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+                         </div>
+                         <div className="flex flex-col items-start translate-y-0.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest leading-none opacity-60">Status: {format(new Date(), 'MMM')}</span>
+                            <span className="text-sm font-black tracking-tight">{isPaused ? 'Paused' : 'Active Duty'}</span>
+                         </div>
+                      </button>
+                   );
+                })()}
+            </div>
        </div>
 
        {/* Initiatives Section Header */}
@@ -427,6 +479,7 @@ export default function CompaniesPage() {
     description: '', 
     color: '#818CF8',
     hourlyRate: 0,
+    contractHours: 0,
     currencyCode: 'USD'
   });
 
@@ -440,6 +493,7 @@ export default function CompaniesPage() {
       status: 'Active',
       priority: 'Medium',
       hourlyRate: Number(newCompany.hourlyRate) || 0,
+      contractHours: Number(newCompany.contractHours) || 0,
       currencyCode: newCompany.currencyCode
     });
     setIsAdding(false);
@@ -448,6 +502,7 @@ export default function CompaniesPage() {
       description: '', 
       color: '#818CF8',
       hourlyRate: 0,
+      contractHours: 0,
       currencyCode: 'USD'
     });
   };
@@ -536,6 +591,19 @@ export default function CompaniesPage() {
                     className="w-full rounded-2xl border border-slate-100 bg-slate-50 pl-10 pr-6 py-4 focus:border-primary/50 outline-none transition-all font-bold text-lg text-slate-900"
                     value={newCompany.hourlyRate}
                     onChange={e => setNewCompany({...newCompany, hourlyRate: Number(e.target.value)})}
+                 />
+               </div>
+             </div>
+
+             <div className="md:col-span-4 space-y-3">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Contract Commitment (Hrs/Week)</label>
+               <div className="relative">
+                 <input 
+                    placeholder="0"
+                    type="number" 
+                    className="w-full rounded-2xl border border-slate-100 bg-slate-50 px-6 py-4 focus:border-primary/50 outline-none transition-all font-bold text-lg text-slate-900"
+                    value={newCompany.contractHours}
+                    onChange={e => setNewCompany({...newCompany, contractHours: Number(e.target.value)})}
                  />
                </div>
              </div>

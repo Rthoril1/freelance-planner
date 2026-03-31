@@ -15,6 +15,7 @@ export interface UserProfile {
   preferredBlocks: string[]; // "Morning", "Afternoon", "Evening"
   lunchTime?: { start: string; durationMinutes: number };
   customBreaks?: { id: string; start: string; durationMinutes: number }[];
+  vacationDays?: string[];
   customPlatforms?: CustomPlatform[];
   hiddenPresetIds?: string[];
   platformsInitialized?: boolean;
@@ -50,6 +51,8 @@ export interface Company {
   status: 'Active' | 'Paused';
   hourlyRate?: number;
   currencyCode?: string;
+  contractHours?: number;
+  pausedMonths?: string[]; // New: Array of ISO month strings (e.g., "2026-04")
 }
 
 

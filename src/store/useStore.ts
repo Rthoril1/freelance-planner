@@ -76,16 +76,15 @@ export const useStore = create<AppState>()((set, get) => ({
       supabase.from('tasks').select('*').eq('user_id', user.id)
     ]);
 
-    const companies = (compRes.data || []).map(c => {
-      const { user_id, hourly_rate, currency_code, logo_url, banner_url, ...rest } = c;
-      return { 
-        ...rest, 
-        hourlyRate: hourly_rate || 0,
-        currencyCode: currency_code || 'USD',
-        logoUrl: logo_url,
-        bannerUrl: banner_url
-      } as Company;
-    });
+    const companies = compRes.data ? (compRes.data.map(c => ({
+      ...c,
+      hourlyRate: c.hourly_rate,
+      currencyCode: c.currency_code,
+      logoUrl: c.logo_url,
+      bannerUrl: c.banner_url,
+      contractHours: c.contract_hours,
+      pausedMonths: c.paused_months || []
+    }))) : [];
 
     const projects = (projRes.data || []).map(p => {
       const { company_id, user_id, ...rest } = p;
@@ -144,9 +143,15 @@ export const useStore = create<AppState>()((set, get) => ({
         "platformsInitialized": true
       }).eq('id', user.id).then();
     }
+    if (!profile.vacationDays) {
+      profile.vacationDays = [];
+    }
     if (!profile.hiddenPresetIds) {
       profile.hiddenPresetIds = [];
     }
+    // Note: If you see "Column not found" errors in the console, 
+    // please run the SQL migration provided in the implementation/walkthrough.
+
 
     // 2. Automated Rollover Logic
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -239,14 +244,16 @@ export const useStore = create<AppState>()((set, get) => ({
     set((state) => ({ companies: [...state.companies, company] }));
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { hourlyRate, currencyCode, logoUrl, bannerUrl, ...rest } = company;
+      const { hourlyRate, currencyCode, logoUrl, bannerUrl, contractHours, pausedMonths, ...rest } = company;
       const dbCompany = { 
         ...rest, 
         user_id: user.id, 
         hourly_rate: hourlyRate || 0,
         currency_code: currencyCode || 'USD',
         logo_url: logoUrl,
-        banner_url: bannerUrl
+        banner_url: bannerUrl,
+        contract_hours: contractHours || 0,
+        paused_months: pausedMonths || []
       };
       await supabase.from('companies').insert(dbCompany);
     }
@@ -259,6 +266,14 @@ export const useStore = create<AppState>()((set, get) => ({
     if (dbFields.hourlyRate !== undefined) {
       dbFields.hourly_rate = dbFields.hourlyRate;
       delete dbFields.hourlyRate;
+    }
+    if (dbFields.contractHours !== undefined) {
+      dbFields.contract_hours = dbFields.contractHours;
+      delete dbFields.contractHours;
+    }
+    if (dbFields.pausedMonths !== undefined) {
+      dbFields.paused_months = dbFields.pausedMonths;
+      delete dbFields.pausedMonths;
     }
     if (dbFields.currencyCode !== undefined) {
       dbFields.currency_code = dbFields.currencyCode;

@@ -3,6 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  startOfWeek, 
+  endOfWeek, 
+  eachDayOfInterval, 
+  isSameMonth, 
+  isWeekend, 
+  isSameDay, 
+  parseISO 
+} from 'date-fns';
+import { 
   Building2, 
   Plus, 
   Trash2, 
@@ -16,7 +28,8 @@ import {
   Monitor,
   Coffee,
   Eye,
-  EyeOff
+  EyeOff,
+  Calendar
 } from 'lucide-react';
 import { generateId, cn } from '@/lib/utils';
 import { CustomPlatform, CustomAction, TaskType, Priority, EnergyLevel, UserProfile } from '@/types';
@@ -78,6 +91,16 @@ export default function SettingsPage() {
     if (localProfile) {
       setProfile(localProfile);
     }
+  };
+
+  const toggleVacationDay = (day: Date) => {
+    if (!localProfile) return;
+    const iso = day.toISOString();
+    const isExistent = localProfile.vacationDays?.some(v => isSameDay(parseISO(v), day));
+    const nextDays = isExistent
+      ? localProfile.vacationDays?.filter(v => !isSameDay(parseISO(v), day))
+      : [...(localProfile.vacationDays || []), iso];
+    handleUpdateLocalProfile({ vacationDays: nextDays });
   };
 
   // Stats
@@ -470,6 +493,74 @@ export default function SettingsPage() {
                                     </button>
                                  </div>
                               ))}
+                           </div>
+                        </div>
+
+                        {/* WORK AVAILABILITY CALENDAR */}
+                        <div className="space-y-6 pt-6 border-t border-slate-100">
+                           <div className="flex items-center justify-between px-1">
+                              <div className="flex items-center gap-3">
+                                 <Calendar className="w-4 h-4 text-primary" />
+                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Monthly Operational Calendar</label>
+                              </div>
+                              <span className="text-[9px] font-bold text-slate-300 italic uppercase">Click days to mark as Off / Vacation</span>
+                           </div>
+
+                           <div className="bg-slate-50/30 rounded-[32px] p-8 border border-slate-100">
+                              <div className="flex items-center justify-between mb-8 px-2">
+                                 <h4 className="font-bold text-slate-900">{format(new Date(), 'MMMM yyyy')}</h4>
+                                 <div className="flex gap-4">
+                                    <div className="flex items-center gap-2">
+                                       <div className="w-2 h-2 rounded-full bg-primary" />
+                                       <span className="text-[9px] font-black text-slate-400 uppercase">Working</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <div className="w-2 h-2 rounded-full bg-rose-500/40" />
+                                       <span className="text-[9px] font-black text-slate-400 uppercase">Off</span>
+                                    </div>
+                                 </div>
+                              </div>
+
+                              <div className="grid grid-cols-7 gap-3">
+                                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                    <span key={day} className="text-[10px] font-black text-slate-300 text-center uppercase">{day[0]}</span>
+                                 ))}
+                                 {(() => {
+                                    const today = new Date();
+                                    const monthStart = startOfMonth(today);
+                                    const calendarDays = eachDayOfInterval({
+                                       start: startOfWeek(monthStart, { weekStartsOn: 0 }),
+                                       end: endOfWeek(endOfMonth(monthStart), { weekStartsOn: 0 })
+                                    });
+
+                                    return calendarDays.map((day, i) => {
+                                       const isCurrentMonth = isSameMonth(day, monthStart);
+                                       const isOff = isWeekend(day) || localProfile.vacationDays?.some(v => isSameDay(parseISO(v), day));
+                                       const isVacation = localProfile.vacationDays?.some(v => isSameDay(parseISO(v), day));
+                                       const isDayToday = isSameDay(day, today);
+
+                                       return (
+                                          <button
+                                             key={i}
+                                             onClick={() => isCurrentMonth && toggleVacationDay(day)}
+                                             className={cn(
+                                                "aspect-square rounded-2xl flex flex-col items-center justify-center transition-all duration-300 border relative",
+                                                !isCurrentMonth ? "opacity-10 pointer-events-none" : "hover:scale-105 active:scale-95",
+                                                isOff 
+                                                   ? isVacation 
+                                                      ? "bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20" 
+                                                      : "bg-slate-100 border-slate-100 text-slate-300"
+                                                   : "bg-white border-slate-100 text-slate-600 shadow-sm hover:shadow-md hover:border-primary/20",
+                                                isDayToday && !isVacation && "ring-2 ring-primary ring-offset-2"
+                                             )}
+                                          >
+                                             <span className="text-xs font-black">{format(day, 'd')}</span>
+                                             {!isOff && isCurrentMonth && <Zap className="w-2.5 h-2.5 text-primary absolute bottom-1.5" />}
+                                          </button>
+                                       );
+                                    });
+                                 })()}
+                              </div>
                            </div>
                         </div>
                      </div>
