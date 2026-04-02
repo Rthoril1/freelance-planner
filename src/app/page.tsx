@@ -160,45 +160,59 @@ export default function Dashboard() {
 
   // Financial Orchestration Calculations
   const metrics = useMemo(() => {
-    const totalMonthDays = eachDayOfInterval({ start: monthRange.start, end: monthRange.end });
-    const workingDaysCount = totalMonthDays.filter(day => 
-      !isWeekend(day) && 
-      !profile?.vacationDays?.some(v => isSameDay(parseISO(v), day))
-    ).length;
+    const allDaysInMonth = eachDayOfInterval({ start: monthRange.start, end: monthRange.end });
+    const monthKey = format(viewingMonth, 'yyyy-MM');
+    const globalOffDays = profile?.vacationDays || [];
 
-    const totalWeekdays = totalMonthDays.filter(day => !isWeekend(day)).length;
-    const workingRatio = workingDaysCount / Math.max(1, totalWeekdays);
+    // Filter companies that are not paused this month
+    const activeCompanies = companies.filter(c => !c.pausedMonths?.includes(monthKey));
 
-    const calculateEarnings = (taskList: typeof tasks) => {
+    const isCompanyWorkingOn = (company: typeof companies[0], day: Date) => {
+      const dayIdx = day.getDay();
+      const standardWorkDays = company.workDays && company.workDays.length > 0 ? company.workDays : (profile?.workDays || [1, 2, 3, 4, 5]);
+      const isStandardDay = standardWorkDays.includes(dayIdx);
+      const isSpecificOffDay = company.offDays?.some(d => isSameDay(parseISO(d), day));
+      return isStandardDay && !isSpecificOffDay;
+    };
+
+    const isAvailableAtAll = (day: Date) => {
+      const isGlobalOff = globalOffDays.some(v => isSameDay(parseISO(v), day));
+      if (isGlobalOff) return false;
+      return activeCompanies.some(c => isCompanyWorkingOn(c, day));
+    };
+
+    const workingDaysCount = allDaysInMonth.filter(day => isAvailableAtAll(day)).length;
+    const totalPossibleWeekdays = allDaysInMonth.filter(day => !isWeekend(day)).length;
+    const workingRatio = workingDaysCount / Math.max(1, totalPossibleWeekdays);
+
+    // Calculate projected monthly income precisely per day per company
+    let projectedMonth = 0;
+    activeCompanies.forEach(company => {
+      const standardWorkDays = company.workDays && company.workDays.length > 0 ? company.workDays : (profile?.workDays || [1, 2, 3, 4, 5]);
+      const dailyHours = (company.contractHours || 0) / Math.max(1, standardWorkDays.length);
+      const dailyRate = dailyHours * (company.hourlyRate || 0);
+      
+      const companyWorkDaysInMonth = allDaysInMonth.filter(day => 
+        isCompanyWorkingOn(company, day) && 
+        !globalOffDays.some(v => isSameDay(parseISO(v), day))
+      ).length;
+
+      projectedMonth += dailyRate * companyWorkDaysInMonth;
+    });
+
+    const calculateEarningsFromTasks = (taskList: typeof tasks) => {
       return taskList.reduce((acc, task) => {
         const project = projects.find(p => p.id === task.projectId);
         const company = companies.find(c => c.id === project?.companyId);
         if (!company || !company.hourlyRate) return acc;
-        
-        const duration = task.estimatedDuration || 1;
-        return acc + (duration * company.hourlyRate);
+        return acc + ((task.estimatedDuration || 1) * company.hourlyRate);
       }, 0);
     };
 
-    // Calculate projected monthly income from active contracts vs. tasks
-    const activeCompanies = companies.filter(c => {
-      const monthKey = format(viewingMonth, 'yyyy-MM');
-      return !c.pausedMonths?.includes(monthKey);
-    });
-
-    const monthlyContractIncome = activeCompanies.reduce((acc, company) => {
-      const weeklyIncome = (company.contractHours || 0) * (company.hourlyRate || 0);
-      return acc + (weeklyIncome * 4.33); // Average weeks per month
-    }, 0);
-
-    const weekTasks = tasks.filter(t => t.scheduledStart && isWithinInterval(parseISO(t.scheduledStart), weekRange));
     const monthTasks = tasks.filter(t => t.scheduledStart && isWithinInterval(parseISO(t.scheduledStart), monthRange));
-    
-    // Filter out tasks from paused companies for this month
     const activeMonthTasks = monthTasks.filter(t => {
       const project = projects.find(p => p.id === t.projectId);
-      const company = activeCompanies.find(c => c.id === project?.companyId);
-      return !!company;
+      return activeCompanies.some(c => c.id === project?.companyId);
     });
     
     const monthRealized = activeMonthTasks
@@ -207,20 +221,14 @@ export default function Dashboard() {
         const project = projects.find(p => p.id === task.projectId);
         const company = companies.find(c => c.id === project?.companyId);
         if (!company || !company.hourlyRate) return acc;
-        
-        const duration = task.estimatedDuration || 1;
-        return acc + (duration * company.hourlyRate);
+        return acc + ((task.estimatedDuration || 1) * company.hourlyRate);
       }, 0);
 
-    // Calculate the target baseline (either from contracts or current scheduled tasks)
-    const baselineIncome = monthlyContractIncome > 0 ? monthlyContractIncome : calculateEarnings(activeMonthTasks);
-    const projectedMonth = baselineIncome * workingRatio;
-
-    // Yearly is projected based on the current adjusted month
+    const weekTasks = tasks.filter(t => t.scheduledStart && isWithinInterval(parseISO(t.scheduledStart), weekRange));
     const yearlyProjected = projectedMonth * 12;
 
     return {
-      week: calculateEarnings(weekTasks),
+      week: calculateEarningsFromTasks(weekTasks),
       month: projectedMonth,
       monthRealized,
       targetProgress: projectedMonth > 0 ? (monthRealized / projectedMonth) * 100 : 0,
@@ -228,7 +236,7 @@ export default function Dashboard() {
       workingDaysCount,
       workingRatio
     };
-  }, [tasks, companies, projects, profile?.vacationDays, viewingMonth, monthRange, weekRange]);
+  }, [tasks, companies, projects, profile?.vacationDays, profile?.workDays, viewingMonth, monthRange, weekRange]);
 
   const workCompositionData = useMemo(() => {
     const inner: any[] = [];
@@ -386,7 +394,7 @@ export default function Dashboard() {
                 </div>
                 <button 
                   onClick={() => router.push('/settings')}
-                  className="px-6 py-3 bg-primary text-background rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-105 transition-all"
+                  className="px-6 py-3 bg-primary text-background rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20  transition-all"
                 >
                   Configure Schedule
                 </button>
@@ -560,8 +568,8 @@ export default function Dashboard() {
                    </button>
                 </div>
 
-                {/* BREAK & LUNCH LIST */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 pt-4 border-t border-border/10">
+                {/* BREAK & LUNCH LIST - 2 COLUMN GRID */}
+                <div className="grid grid-cols-2 gap-x-10 gap-y-5 pt-8 border-t border-border/20">
                    {profile.lunchTime && (
                      <div className="flex items-center justify-between group/lunch">
                        <div className="flex items-center gap-4">
@@ -572,8 +580,9 @@ export default function Dashboard() {
                              <Clock className={cn("h-4 w-4", operationalStatus.state === 'Lunch' ? "text-amber-500" : "text-muted-foreground")} />
                           </div>
                           <div className="leading-tight">
-                             <p className="text-sm font-bold text-foreground">Lunch Break</p>
-                             <p className="text-[10px] text-muted-foreground font-medium">{profile.lunchTime.start} ({profile.lunchTime.durationMinutes} min)</p>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Meal Break</p>
+                             <p className="text-sm font-bold text-foreground">Lunch</p>
+                             <p className="text-[11px] text-muted-foreground font-medium">{profile.lunchTime.start} ({profile.lunchTime.durationMinutes}m)</p>
                           </div>
                        </div>
                        {operationalStatus.state === 'Lunch' && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ring-4 ring-amber-500/20" />}
@@ -589,10 +598,11 @@ export default function Dashboard() {
                              <Zap className={cn("h-4 w-4", operationalStatus.timeLabel === b.id ? "text-amber-500" : "text-muted-foreground")} />
                           </div>
                           <div className="leading-tight">
-                             <p className="text-sm font-bold text-foreground overflow-hidden text-ellipsis whitespace-nowrap max-w-[80px] lg:max-w-[100px]">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Rest Period</p>
+                             <p className="text-sm font-bold text-foreground overflow-hidden text-ellipsis whitespace-nowrap max-w-[102px]">
                                Break {idx + 1}
                              </p>
-                             <p className="text-[10px] text-muted-foreground font-medium">{b.start} ({b.durationMinutes} min)</p>
+                             <p className="text-[11px] text-muted-foreground font-medium">{b.start} ({b.durationMinutes}m)</p>
                           </div>
                        </div>
                        {operationalStatus.timeLabel === b.id && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ring-4 ring-amber-500/20" />}
@@ -909,7 +919,7 @@ export default function Dashboard() {
                  </div>
                  <div className="flex flex-col items-end gap-1">
                    <span className="text-[9px] font-black bg-primary/10 text-primary px-3 py-1.5 rounded-full uppercase tracking-widest whitespace-nowrap">{metrics.workingDaysCount} Days Active</span>
-                   <span className="text-[8px] font-bold text-muted-foreground/40 italic">Click to toggle Off-days</span>
+                   
                  </div>
               </div>
 
@@ -925,33 +935,56 @@ export default function Dashboard() {
                      end: endOfWeek(monthEnd, { weekStartsOn: 0 })
                    });
 
-                   return calendarDays.map((day, i) => {
-                     const isCurrentMonth = isSameMonth(day, monthStart);
-                     const isOff = isWeekend(day) || profile?.vacationDays?.some(v => isSameDay(parseISO(v), day));
-                     const isVacation = profile?.vacationDays?.some(v => isSameDay(parseISO(v), day));
-                     const isToday = isSameDay(day, new Date());
+                                                           return calendarDays.map((day, i) => {
+                      const isCurrentMonth = isSameMonth(day, monthStart);
+                      const monthKey = format(viewingMonth, 'yyyy-MM');
+                      const activeCompanies = companies.filter(c => !c.pausedMonths?.includes(monthKey));
+                      
+                      const isGlobalOff = profile?.vacationDays?.some(v => isSameDay(parseISO(v), day));
+                      
+                      const activeCompaniesOnDay = activeCompanies.filter(c => {
+                        const standardWorkDays = c.workDays && c.workDays.length > 0 ? c.workDays : (profile?.workDays || [1, 2, 3, 4, 5]);
+                        const isStandardDay = standardWorkDays.includes(day.getDay());
+                        const isSpecificOffDay = c.offDays?.some(d => isSameDay(parseISO(d), day));
+                        return isStandardDay && !isSpecificOffDay;
+                      });
 
-                     return (
-                       <button
-                         key={i}
-                         onClick={() => isCurrentMonth && toggleVacationDay(day)}
-                         className={cn(
-                           "aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-300 border relative group",
-                           !isCurrentMonth ? "opacity-10 pointer-events-none" : "hover:scale-105",
-                           isOff 
-                             ? isVacation 
+                      const isActuallyWorking = activeCompaniesOnDay.length > 0;
+                      const isVacation = isGlobalOff;
+                      const isToday = isSameDay(day, new Date());
+
+                      return ( 
+                        <div 
+                          key={i} 
+                          className={cn(
+                            "aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-300 border relative group",
+                            !isCurrentMonth ? "opacity-10 pointer-events-none" : "",
+                            isActuallyWorking 
+                              ? "bg-surface-highest/5 border-border/10 text-foreground shadow-sm"
+                              : (isVacation 
                                 ? "bg-rose-500/10 border-rose-500/20 text-rose-500" 
-                                : "bg-surface-highest/20 border-border/5 text-muted-foreground/30"
-                             : "bg-surface-highest/5 border-border/10 text-foreground shadow-sm hover:shadow-md",
-                           isToday && "ring-2 ring-primary ring-offset-4 ring-offset-surface-high"
-                         )}
-                       >
-                         <span className="text-[11px] font-black">{format(day, 'd')}</span>
-                         {!isOff && isCurrentMonth && <Zap className="w-2 h-2 text-primary absolute bottom-1 active:animate-ping" />}
-                       </button>
-                     );
-                   });
-                 })()}
+                                : "bg-surface-highest/20 border-border/5 text-muted-foreground/30"),
+                            isToday && "ring-2 ring-primary ring-offset-4 ring-offset-surface-high"
+                          )} 
+                        > 
+                          <span className="text-[11px] font-black">{format(day, 'd')}</span>
+                          {isCurrentMonth && activeCompaniesOnDay.length > 0 && (
+                            <div className="flex gap-0.5 absolute bottom-1">
+                              {activeCompaniesOnDay.slice(0, 4).map(c => (
+                                <div 
+                                  key={c.id} 
+                                  title={c.name}
+                                  className="w-1 h-1 rounded-full cursor-help hover:scale-150 transition-transform" 
+                                  style={{ backgroundColor: c.color }} 
+                                />
+                              ))}
+                              {activeCompaniesOnDay.length > 4 && <div className="w-1 h-1 rounded-full bg-slate-400" />}
+                            </div>
+                          )} 
+                        </div> 
+                      );
+                    });
+                  })()}
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t border-border/5">
@@ -1089,7 +1122,7 @@ export default function Dashboard() {
                <button onClick={() => setCropImageSrc(null)} className="px-6 py-3 text-xs font-bold text-white/70 hover:text-white transition-colors uppercase tracking-widest">
                   Cancel
                </button>
-               <button onClick={handleApplyCrop} disabled={isUploadingAvatar} className="flex items-center gap-2 px-8 py-3 bg-primary text-white text-xs font-bold rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+               <button onClick={handleApplyCrop} disabled={isUploadingAvatar} className="flex items-center gap-2 px-8 py-3 bg-primary text-white text-xs font-bold rounded-2xl shadow-xl  active:scale-95 transition-all disabled:opacity-50">
                   {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                   Apply Crop
                </button>
@@ -1100,6 +1133,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 

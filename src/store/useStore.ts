@@ -49,6 +49,7 @@ interface AppState {
 
   addTask: (task: Task) => Promise<void>;
   updateTask: (id: string, task: Partial<Task>) => Promise<void>;
+  updateTasks: (tasks: { id: string, updates: Partial<Task> }[]) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   
   clearSchedule: () => Promise<void>;
@@ -83,7 +84,9 @@ export const useStore = create<AppState>()((set, get) => ({
       logoUrl: c.logo_url,
       bannerUrl: c.banner_url,
       contractHours: c.contract_hours,
-      pausedMonths: c.paused_months || []
+      pausedMonths: c.paused_months || [],
+      workDays: c.work_days || [],
+      offDays: c.off_days || []
     }))) : [];
 
     const projects = (projRes.data || []).map(p => {
@@ -253,7 +256,9 @@ export const useStore = create<AppState>()((set, get) => ({
         logo_url: logoUrl,
         banner_url: bannerUrl,
         contract_hours: contractHours || 0,
-        paused_months: pausedMonths || []
+        paused_months: pausedMonths || [],
+        work_days: company.workDays || [],
+        off_days: company.offDays || []
       };
       await supabase.from('companies').insert(dbCompany);
     }
@@ -286,6 +291,14 @@ export const useStore = create<AppState>()((set, get) => ({
     if (dbFields.bannerUrl !== undefined) {
       dbFields.banner_url = dbFields.bannerUrl;
       delete dbFields.bannerUrl;
+    }
+    if (dbFields.workDays !== undefined) {
+      dbFields.work_days = dbFields.workDays;
+      delete dbFields.workDays;
+    }
+    if (dbFields.offDays !== undefined) {
+      dbFields.off_days = dbFields.offDays;
+      delete dbFields.offDays;
     }
     await supabase.from('companies').update(dbFields).eq('id', id);
   },
@@ -391,9 +404,44 @@ export const useStore = create<AppState>()((set, get) => ({
     const { error } = await supabase.from('tasks').update(dbFields).eq('id', id);
     if (error) {
       console.error('Task update failed:', error);
-      // Revert local state on failure if needed
-      // (Advanced users: implementing a proper rollback here is recommended)
     }
+  },
+
+  updateTasks: async (taskUpdates) => {
+    const now = new Date().toISOString();
+    
+    // 1. Prepare local state update
+    set((state) => ({
+      tasks: state.tasks.map(t => {
+        const update = taskUpdates.find(u => u.id === t.id);
+        if (update) {
+          const finalUpdates = { ...update.updates };
+          if (finalUpdates.status === 'Completed') {
+            (finalUpdates as any).completedAt = now;
+          } else if (finalUpdates.status) {
+            (finalUpdates as any).completedAt = null;
+          }
+          return { ...t, ...finalUpdates };
+        }
+        return t;
+      })
+    }));
+
+    // 2. Update Supabase in bulk (using upsert or multiple calls)
+    // For simplicity and to avoid complex mapping here, we'll use Promise.all with updates
+    // In a production app, a single bulk update or RPC would be better.
+    const promises = taskUpdates.map(({ id, updates }) => {
+      const dbFields = { ...updates } as any;
+      if (dbFields.projectId) { dbFields.project_id = dbFields.projectId; delete dbFields.projectId; }
+      if (dbFields.parentTaskId !== undefined) { dbFields.parent_task_id = dbFields.parentTaskId; delete dbFields.parentTaskId; }
+      if (dbFields.completedAt !== undefined) { dbFields.completed_at = dbFields.completedAt; delete dbFields.completedAt; }
+      return supabase.from('tasks').update(dbFields).eq('id', id);
+    });
+
+    const results = await Promise.all(promises);
+    results.forEach((res, i) => {
+      if (res.error) console.error(`Failed to update task ${taskUpdates[i].id}:`, res.error);
+    });
   },
 
   deleteTask: async (id) => {
@@ -403,32 +451,32 @@ export const useStore = create<AppState>()((set, get) => ({
 
   clearSchedule: async () => {
     const { tasks } = get();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
     // 1. Identify tasks to delete (instances created by auto-schedule)
     const toDelete = tasks.filter(t => t.status === 'Scheduled' && t.parentTaskId);
-    // 2. Identify tasks to reset (manually scheduled main tasks)
+    // 2. Identify tasks to reset (all scheduled tasks, including past incompletes)
     const toReset = tasks.filter(t => t.status === 'Scheduled' && !t.parentTaskId);
+
+    const idsToDelete = toDelete.map(t => t.id);
+    const idsToReset = toReset.map(t => t.id);
 
     // Update state
     set((state) => ({
       tasks: state.tasks
-        .filter(t => !(t.status === 'Scheduled' && t.parentTaskId))
-        .map(t => t.status === 'Scheduled' && !t.parentTaskId 
+        .filter(t => !idsToDelete.includes(t.id))
+        .map(t => idsToReset.includes(t.id)
           ? { ...t, status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined } 
           : t
         )
     }));
 
     // Update database
-    if (toDelete.length > 0) {
-      await supabase.from('tasks').delete().in('id', toDelete.map(t => t.id));
+    if (idsToDelete.length > 0) {
+      await supabase.from('tasks').delete().in('id', idsToDelete);
     }
-    if (toReset.length > 0) {
+    if (idsToReset.length > 0) {
       await supabase.from('tasks')
         .update({ status: 'Todo', scheduledStart: null, scheduledEnd: null })
-        .in('id', toReset.map(t => t.id));
+        .in('id', idsToReset);
     }
   }
 

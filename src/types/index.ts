@@ -53,6 +53,8 @@ export interface Company {
   currencyCode?: string;
   contractHours?: number;
   pausedMonths?: string[]; // New: Array of ISO month strings (e.g., "2026-04")
+  workDays?: number[]; // [1, 2, 3, 4, 5] where 1 = Monday
+  offDays?: string[]; // ISO date strings for specific holidays/off-days
 }
 
 

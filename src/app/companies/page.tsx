@@ -2,8 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { useStore } from '@/store/useStore';
-import { Plus, Trash2, Building2, MoreVertical, Zap, ZapOff, FolderKanban, ArrowRight, ArrowLeft, X, Camera, Image as ImageIcon, Loader2, Calendar, CheckCircle2, Circle, ListTodo, Activity } from 'lucide-react';
-import { format, isThisMonth } from 'date-fns';
+import { Plus, Trash2, Building2, MoreVertical, Zap, ZapOff, FolderKanban, ArrowRight, ArrowLeft, X, Camera, Image as ImageIcon, Loader2, Calendar, CheckCircle2, Circle, ListTodo, Activity, ChevronLeft, ChevronRight, Info, Clock, Palette } from 'lucide-react';
+import { format, isThisMonth, subMonths, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, parseISO, isWeekend } from 'date-fns';
 import { generateId } from '@/lib/utils';
 import { TacticalColorPicker } from '@/components/ui/TacticalColorPicker';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
 
   // Dashboard Accordion State
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [viewingMonth, setViewingMonth] = useState(new Date());
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -72,7 +73,7 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
       name: newProject.name,
       companyId: company.id,
       color: newProject.color,
-      status: newProject.status,
+      status: 'Active',
       startDate: new Date().toISOString()
     });
     setNewProject({ name: '', status: 'Active', color: '#6366f1' });
@@ -105,142 +106,306 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
           </button>
        </div>
 
-       {/* Sub-Header: Dashboard Row */}
-       <div className="bg-white w-full rounded-[40px] shadow-sm border border-slate-200/60 p-8 flex flex-col lg:flex-row items-center justify-between gap-10 mb-12">
+       {/* DUAL-TIER COMMAND CENTER HEADER */}
+       <div className="bg-white w-full rounded-[48px] shadow-sm border border-slate-200/60 p-10 flex flex-col gap-10 mb-12 relative overflow-hidden">
            
-           {/* Left side: Identity */}
-           <div className="flex flex-col sm:flex-row items-center gap-8 w-full">
-              <div 
-                 onClick={(e) => { e.stopPropagation(); logoInputRef.current?.click(); }} 
-                 className="w-28 h-28 shrink-0 rounded-[28px] border-4 border-slate-50 bg-slate-50 shadow-inner overflow-hidden group cursor-pointer relative flex items-center justify-center hover:-translate-y-1 transition-transform" 
-                 style={{ color: company.color }}
-              >
-                 {company.logoUrl ? (
-                    <img src={company.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                 ) : (
-                    <Building2 className="w-12 h-12" />
-                 )}
-                 <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 text-center backdrop-blur-sm">
-                    {isUploadingLogo ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-6 h-6 text-white" />}
+           {/* Decorative Accent */}
+           <div className="absolute top-0 right-0 w-64 h-64 blur-[100px] rounded-full opacity-5 pointer-events-none" style={{ backgroundColor: company.color }} />
+
+           {/* Tier 1: Identity & Primary Status */}
+           <div className="flex flex-col lg:flex-row items-center justify-between gap-8 border-b border-slate-50 pb-10">
+              
+              {/* Identity Column */}
+              <div className="flex items-center gap-8 w-full group">
+                 <div 
+                    onClick={(e) => { e.stopPropagation(); logoInputRef.current?.click(); }} 
+                    className="w-32 h-32 shrink-0 rounded-[32px] border-4 border-slate-50 bg-slate-50 shadow-inner overflow-hidden relative flex items-center justify-center hover:-translate-y-1 transition-all duration-500 cursor-pointer" 
+                    style={{ color: company.color }}
+                 >
+                    {company.logoUrl ? (
+                       <img src={company.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                       <Building2 className="w-14 h-14" />
+                    )}
+                    <div className="absolute inset-0 bg-slate-900/60 opacity-0 hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 text-center backdrop-blur-sm">
+                       {isUploadingLogo ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-6 h-6 text-white" />}
+                    </div>
+                 </div>
+                 
+                 <div className="flex flex-col flex-1 gap-2">
+                    <input
+                       type="text"
+                       className="text-5xl font-black text-slate-900 tracking-tight bg-transparent border-none outline-none hover:bg-slate-50 focus:bg-slate-50 rounded-2xl px-4 py-2 -ml-4 transition-colors w-full placeholder:text-slate-200"
+                       value={company.name}
+                       onChange={(e) => updateCompany(company.id, { name: e.target.value })}
+                    />
+                    <div className="flex items-center gap-4">
+                       <input
+                          type="text"
+                          className="text-slate-400 font-medium text-lg bg-transparent border-none outline-none hover:bg-slate-50 focus:bg-slate-50 rounded-2xl px-4 py-1.5 -ml-4 transition-colors w-full placeholder:text-slate-200"
+                          value={company.description || ''}
+                          onChange={(e) => updateCompany(company.id, { description: e.target.value })}
+                          placeholder="Add strategic account description..."
+                       />
+                    </div>
                  </div>
               </div>
-              
-              <div className="flex flex-col w-full">
-                 <input
-                    type="text"
-                    className="text-4xl font-black text-slate-900 tracking-tight bg-transparent border-none outline-none hover:bg-slate-50 focus:bg-slate-50 rounded-2xl px-4 py-2 -ml-4 transition-colors w-full placeholder:text-slate-200"
-                    value={company.name}
-                    onChange={(e) => updateCompany(company.id, { name: e.target.value })}
-                 />
-                 <input
-                    type="text"
-                    className="text-slate-400 font-medium text-base bg-transparent border-none outline-none hover:bg-slate-50 focus:bg-slate-50 rounded-2xl px-4 py-1.5 -ml-4 transition-colors w-full placeholder:text-slate-200"
-                    value={company.description || ''}
-                    onChange={(e) => updateCompany(company.id, { description: e.target.value })}
-                    placeholder="Add an enterprise description..."
-                 />
+
+              {/* Status & Quick Actions */}
+              <div className="flex items-center gap-4 shrink-0">
+                 {(() => {
+                    const currMonthKey = format(new Date(), 'yyyy-MM');
+                    const isPaused = company.pausedMonths?.includes(currMonthKey);
+                    return (
+                       <button 
+                          onClick={() => {
+                             const current = company.pausedMonths || [];
+                             const updated = isPaused 
+                                ? current.filter(m => m !== currMonthKey)
+                                : [...current, currMonthKey];
+                             updateCompany(company.id, { pausedMonths: updated });
+                          }}
+                          className={cn(
+                             "flex items-center gap-6 px-10 py-5 rounded-[28px] border transition-all duration-500 group/status shadow-sm",
+                             isPaused 
+                                ? "bg-rose-50 border-rose-100 text-rose-600" 
+                                : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/10"
+                          )}
+                       >
+                          <div className={cn(
+                             "w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm transition-transform group-hover/status:scale-110",
+                             isPaused ? "bg-rose-500 text-white" : "bg-emerald-500 text-white"
+                          )}>
+                             {isPaused ? <ZapOff className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+                          </div>
+                          <div className="flex flex-col items-start">
+                             <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none opacity-50 mb-1">Status: {format(new Date(), 'MMM')}</span>
+                             <span className="text-lg font-black tracking-tight">{isPaused ? 'Paused' : 'Active Duty'}</span>
+                          </div>
+                       </button>
+                    );
+                 })()}
               </div>
            </div>
 
-           {/* Right side: Dashboard Metrics */}
-           <div className="flex items-center gap-6 shrink-0 w-full lg:w-auto justify-end">
+           {/* Tier 2: Tactical Grid & Tooling */}
+           <div className="flex flex-wrap items-center gap-5">
            
-               <div className="hidden lg:flex bg-emerald-50 rounded-[24px] px-6 py-4 items-center gap-5 border border-emerald-100 focus-within:ring-4 ring-emerald-500/10 transition-shadow">
-                  <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                     <span className="text-emerald-500 font-bold text-xl">$</span>
-                  </div>
-                  <div className="flex flex-col">
-                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600/70">MTD Earnings</span>
-                     <div className="flex items-center gap-1">
-                        <span className="text-emerald-900 font-black text-xl leading-none">$</span>
-                        <span className="font-black text-2xl text-emerald-900 leading-none h-auto">
-                           {currentMonthEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                     </div>
-                  </div>
-               </div>
-
-               <div className="bg-slate-50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 focus-within:ring-4 ring-primary/10 transition-shadow">
-                  <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                     <Zap className="w-6 h-6 text-primary" />
-                  </div>
-                  <div className="flex flex-col">
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hourly Yield</span>
-                     <div className="flex items-center gap-1">
-                        <span className="text-slate-900 font-black text-xl leading-none">$</span>
-                        <input 
-                           type="number"
-                           className="bg-transparent border-none outline-none font-black text-2xl text-slate-900 w-24 p-0 leading-none h-auto focus:ring-0"
-                           value={company.hourlyRate || 0}
-                           onChange={(e) => updateCompany(company.id, { hourlyRate: Number(e.target.value) })}
-                        />
-                     </div>
-                  </div>
-               </div>
-               
-                <div className="bg-slate-50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 focus-within:ring-4 ring-primary/10 transition-shadow">
-                   <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                      <FolderKanban className="w-6 h-6 text-primary" />
+                {/* Brand Identity Picker */}
+                <div className="bg-slate-50/50 rounded-[28px] px-8 py-5 flex items-center gap-6 border border-slate-100 hover:bg-white hover:shadow-md transition-all group/palette">
+                   <div className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center transition-transform group-hover/palette:scale-110">
+                      <Palette className="w-6 h-6" style={{ color: company.color }} />
                    </div>
                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-bold">Weekly Contract</span>
-                      <div className="flex items-center gap-1">
-                         <input 
-                            type="number"
-                            className="bg-transparent border-none outline-none font-black text-2xl text-slate-900 w-20 p-0 leading-none h-auto focus:ring-0"
-                            value={company.contractHours || 0}
-                            onChange={(e) => updateCompany(company.id, { contractHours: Number(e.target.value) })}
+                      <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-2">Identity Palette</span>
+                      <div className="scale-90 origin-left">
+                         <TacticalColorPicker 
+                            value={company.color} 
+                            onChange={(val) => updateCompany(company.id, { color: val })} 
                          />
-                         <span className="text-slate-400 font-black text-[10px] mt-1 tracking-widest uppercase">HRS</span>
                       </div>
                    </div>
                 </div>
 
-                <div className="hidden xl:flex bg-slate-50 rounded-[24px] px-6 py-4 items-center gap-5 border border-slate-100">
-                   <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                      <Activity className="w-6 h-6 text-primary" />
+                <div className="flex-1 min-w-[200px] h-[1px] bg-slate-50 hidden lg:block mx-4" />
+
+                {/* Tactical Metrics Row */}
+                <div className="flex items-center gap-6 flex-wrap lg:flex-nowrap">
+                   
+                   <div className="bg-emerald-50/50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-emerald-100 hover:shadow-md transition-all">
+                      <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                         <span className="text-emerald-500 font-black text-xl">$</span>
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-[10px] font-black uppercase tracking-[0.1em] text-emerald-600/70">MTD Earnings</span>
+                         <span className="font-black text-2xl text-emerald-900 leading-none h-auto">
+                            ${currentMonthEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                         </span>
+                      </div>
                    </div>
-                   <div className="flex flex-col">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Initiatives</span>
-                      <span className="text-2xl font-black text-slate-900 leading-none">{companyProjects.length}</span>
+
+                   <div className="bg-slate-50/50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 hover:shadow-md transition-all">
+                      <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                         <Zap className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Hourly Yield</span>
+                         <div className="flex items-center gap-1">
+                            <span className="text-slate-900 font-black text-xl leading-none">$</span>
+                            <input 
+                               type="number"
+                               className="bg-transparent border-none outline-none font-black text-2xl text-slate-900 w-24 p-0 leading-none h-auto focus:ring-0"
+                               value={company.hourlyRate || 0}
+                               onChange={(e) => updateCompany(company.id, { hourlyRate: Number(e.target.value) })}
+                            />
+                         </div>
+                      </div>
+                   </div>
+                   
+                   <div className="bg-slate-50/50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 hover:shadow-md transition-all">
+                      <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                         <FolderKanban className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 font-bold">Weekly Rate</span>
+                         <div className="flex items-center gap-1 text-2xl font-black text-slate-900">
+                            <input 
+                               type="number"
+                               className="bg-transparent border-none outline-none font-black text-2xl text-slate-900 w-16 p-0 leading-none h-auto focus:ring-0"
+                               value={company.contractHours || 0}
+                               onChange={(e) => updateCompany(company.id, { contractHours: Number(e.target.value) })}
+                            />
+                            <span className="text-slate-300 text-sm font-bold uppercase tracking-widest ml-1">Hrs</span>
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="bg-slate-50/50 rounded-[24px] px-6 py-4 flex items-center gap-5 border border-slate-100 hover:shadow-md transition-all">
+                      <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                         <Activity className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Initiatives</span>
+                         <span className="text-2xl font-black text-slate-900 leading-none">{companyProjects.length}</span>
+                      </div>
                    </div>
                 </div>
-
-                {/* MONTHLY PAUSE TOGGLE */}
-                {(() => {
-                   const currMonthKey = format(new Date(), 'yyyy-MM');
-                   const isPaused = company.pausedMonths?.includes(currMonthKey);
-                   return (
-                      <button 
-                         onClick={() => {
-                            const current = company.pausedMonths || [];
-                            const updated = isPaused 
-                               ? current.filter(m => m !== currMonthKey)
-                               : [...current, currMonthKey];
-                            updateCompany(company.id, { pausedMonths: updated });
-                         }}
-                         className={cn(
-                            "flex items-center gap-4 px-6 py-4 rounded-[24px] border transition-all duration-300",
-                            isPaused 
-                               ? "bg-rose-50 border-rose-100 text-rose-600 shadow-inner" 
-                               : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:shadow-md"
-                         )}
-                      >
-                         <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
-                            isPaused ? "bg-rose-500 text-white" : "bg-emerald-500 text-white"
-                         )}>
-                            {isPaused ? <ZapOff className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
-                         </div>
-                         <div className="flex flex-col items-start translate-y-0.5">
-                            <span className="text-[10px] font-black uppercase tracking-widest leading-none opacity-60">Status: {format(new Date(), 'MMM')}</span>
-                            <span className="text-sm font-black tracking-tight">{isPaused ? 'Paused' : 'Active Duty'}</span>
-                         </div>
-                      </button>
-                   );
-                })()}
             </div>
        </div>
+
+        {/* WORK SCHEDULE & OPERATIONAL PARAMETERS */}
+        <div className="grid grid-cols-12 gap-8 mb-12">
+            
+            {/* WEEKDAY SELECTOR */}
+            <div className="col-span-12 lg:col-span-5 bg-white rounded-[40px] border border-slate-200/60 p-10 shadow-sm">
+                <div className="flex items-center gap-4 mb-8">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <Clock className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                        <h4 className="text-lg font-black text-slate-900 tracking-tight leading-none">Weekly Rhythm</h4>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Select standard workdays</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-3">
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => {
+                        const isWorking = (company.workDays || [1, 2, 3, 4, 5]).includes(i);
+                        return (
+                            <button
+                                key={`wd-${i}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const current = company.workDays || [1, 2, 3, 4, 5];
+                                    const updated = isWorking 
+                                        ? current.filter(d => d !== i)
+                                        : [...current, i].sort();
+                                    updateCompany(company.id, { workDays: updated });
+                                }}
+                                className={cn(
+                                    "aspect-square rounded-2xl flex items-center justify-center text-xs font-black transition-all",
+                                    isWorking 
+                                        ? "bg-primary text-white shadow-lg shadow-primary/20 scale-105" 
+                                        : "bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100"
+                                )}
+                            >
+                                {day}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="mt-8 p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-4">
+                    <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                    <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                        These days define the core availability for this client. Revenue forecasts and task automatic rollover will respect these boundaries.
+                    </p>
+                </div>
+            </div>
+
+            {/* HOLIDAY / OFF-DAY CALENDAR */}
+            <div className="col-span-12 lg:col-span-7 bg-white rounded-[40px] border border-slate-200/60 p-10 shadow-sm">
+                <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center">
+                            <Calendar className="w-5 h-5 text-rose-500" />
+                        </div>
+                        <div>
+                            <h4 className="text-lg font-black text-slate-900 tracking-tight leading-none">Holiday Exclusions</h4>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Specific off-days for {company.name}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setViewingMonth(subMonths(viewingMonth, 1)); }}
+                            className="p-1.5 hover:bg-white hover:shadow-sm rounded-lg transition-all text-slate-500"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest min-w-[90px] text-center">
+                            {format(viewingMonth, 'MMMM yyyy')}
+                        </span>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setViewingMonth(addMonths(viewingMonth, 1)); }}
+                            className="p-1.5 hover:bg-white hover:shadow-sm rounded-lg transition-all text-slate-500"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-2">
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                        <span key={`hd-${i}`} className="text-[9px] font-black text-slate-300 text-center uppercase tracking-widest pb-2">{d}</span>
+                    ))}
+                    {(() => {
+                        const monthStart = startOfMonth(viewingMonth);
+                        const monthEnd = endOfMonth(monthStart);
+                        const calendarDays = eachDayOfInterval({
+                            start: startOfWeek(monthStart),
+                            end: endOfWeek(monthEnd)
+                        });
+
+                        return calendarDays.map((day, i) => {
+                            const isCurrentMonth = isSameMonth(day, monthStart);
+                            const isOff = (company.offDays || []).some(d => isSameDay(parseISO(d), day));
+                            const isStandardWorkDay = (company.workDays || [1, 2, 3, 4, 5]).includes(day.getDay());
+
+                            return (
+                                <button
+                                    key={i}
+                                    disabled={!isCurrentMonth}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const dateStr = day.toISOString();
+                                        const current = company.offDays || [];
+                                        const updated = isOff
+                                            ? current.filter(d => !isSameDay(parseISO(d), day))
+                                            : [...current, dateStr];
+                                        updateCompany(company.id, { offDays: updated });
+                                    }}
+                                    className={cn(
+                                        "aspect-[1.4] rounded-xl flex flex-col items-center justify-center transition-all border relative",
+                                        !isCurrentMonth ? "opacity-0 pointer-events-none" : "hover:scale-105",
+                                        isOff
+                                            ? "bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20"
+                                            : !isStandardWorkDay
+                                                ? "bg-slate-50 text-slate-300 border-slate-100"
+                                                : "bg-white text-slate-600 border-slate-100 hover:border-primary/30"
+                                    )}
+                                >
+                                    <span className="text-[10px] font-bold">{format(day, 'd')}</span>
+                                    {isStandardWorkDay && !isOff && (
+                                        <div className="w-1 h-1 rounded-full bg-primary/30 absolute bottom-1.5" />
+                                    )}
+                                </button>
+                            );
+                        });
+                    })()}
+                </div>
+            </div>
+        </div>
 
        {/* Initiatives Section Header */}
        <div className="flex items-center justify-between pb-6 mb-8 border-b-2 border-slate-100 w-full">
@@ -316,19 +481,40 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                          setActiveProjectId(isActive ? null : project.id); 
                      }}
                      className={cn(
-                        "group bg-white rounded-[40px] border p-8 shadow-sm hover:shadow-xl transition-all duration-500 relative flex flex-col cursor-pointer",
-                        isActive ? "border-primary/40 shadow-2xl scale-[1.01]" : "border-slate-200/60 hover:-translate-y-1"
+                        "group relative rounded-[40px] border p-8 shadow-sm hover:shadow-2xl transition-all duration-500 flex flex-col cursor-pointer overflow-hidden",
+                        isActive ? "scale-[1.01]" : "hover:-translate-y-1"
                      )}
+                     style={{ 
+                        backgroundColor: `${project.color}05`, 
+                        borderColor: isActive ? `${project.color}40` : `${project.color}15`,
+                        boxShadow: isActive ? `0 20px 50px -12px ${project.color}25` : undefined
+                     }}
+                     onMouseEnter={(e) => {
+                        if (!isActive) {
+                           e.currentTarget.style.boxShadow = `0 30px 60px -12px ${project.color}30`;
+                           e.currentTarget.style.borderColor = `${project.color}30`;
+                        }
+                     }}
+                     onMouseLeave={(e) => {
+                        if (!isActive) {
+                           e.currentTarget.style.boxShadow = '';
+                           e.currentTarget.style.borderColor = `${project.color}15`;
+                        }
+                     }}
                   >
                     
+                    {/* Decorative Brand Gradient */}
+                    <div className="absolute top-0 right-0 w-32 h-32 blur-[60px] rounded-full opacity-10 pointer-events-none" style={{ backgroundColor: project.color }} />
+
                     {/* Project Header */}
                     <div className="flex items-start justify-between relative z-10 mb-8">
                        <div className="flex flex-col gap-2">
                           <div className="flex items-center gap-4">
-                              <h3 className="text-2xl font-black tracking-tight text-slate-900 leading-tight pr-4">
+                              <h3 className="text-2xl font-black tracking-tight text-slate-900 leading-tight pr-2">
                                  {project.name}
                               </h3>
-                              <div className="scale-75 origin-left h-auto min-h-0 -mt-2 shadow-none bg-transparent">
+                              <div className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm animate-pulse" style={{ backgroundColor: project.color }} />
+                              <div className="scale-75 origin-left h-auto min-h-0 -mt-2 shadow-none bg-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                                  <TacticalColorPicker 
                                     value={project.color || "#6366f1"} 
                                     onChange={(c) => updateProject(project.id, { color: c })} 
@@ -351,7 +537,11 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                     </div>
 
                     {/* Progress Bar Snippet (Always Visible) */}
-                    <div className="relative z-10 bg-slate-50 rounded-[24px] p-6 border border-slate-100 w-full mb-2" style={{ borderColor: (project.color || '#6366f1') + '15' }}>
+                    <div className="relative z-10 rounded-[28px] p-6 border w-full mb-2 transition-colors" 
+                       style={{ 
+                          backgroundColor: `${project.color}0A`, 
+                          borderColor: `${project.color}15` 
+                       }}>
                        <div className="flex justify-between items-end mb-4">
                           <span className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">Progression</span>
                           <span className={cn("text-2xl font-black tracking-tighter leading-none transition-colors duration-500", progress === 100 ? 'text-emerald-500' : '')} style={progress !== 100 ? { color: project.color || '#6366f1' } : {}}>
@@ -372,15 +562,15 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                     {/* Collapsible Deployed Tasks Accordion */}
                     <div 
                         className={cn(
-                           "grid transition-all duration-500 ease-in-out cursor-default",
+                           "grid transition-all duration-500 ease-in-out cursor-default relative z-10",
                            isActive ? "grid-rows-[1fr] opacity-100 mt-4" : "grid-rows-[0fr] opacity-0 mt-0"
                         )}
                         onClick={(e) => e.stopPropagation()} // Prevent closing when interacting inside deployed block
                     >
                        <div className="overflow-hidden">
-                          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4 px-2">
+                          <div className="flex items-center justify-between pb-3 border-b mb-4 px-2" style={{ borderColor: `${project.color}15` }}>
                              <h5 className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-2">
-                                <ListTodo className="w-3.5 h-3.5 text-slate-300" /> Action Items ({completed}/{total})
+                                <ListTodo className="w-3.5 h-3.5" style={{ color: project.color }} /> Action Items ({completed}/{total})
                              </h5>
                              <button 
                                 onClick={() => {
@@ -403,7 +593,11 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                                 projectTasks.map(task => (
                                    <div 
                                       key={task.id} 
-                                      className="flex items-center gap-3 bg-white hover:bg-slate-50 border border-slate-100 px-4 py-3 rounded-2xl group transition-all" style={{ backgroundColor: project.color + "0D" }}
+                                      className="flex items-center gap-3 border px-4 py-3 rounded-2xl group transition-all" 
+                                      style={{ 
+                                         backgroundColor: task.status === 'Completed' ? `${project.color}05` : 'white',
+                                         borderColor: task.status === 'Completed' ? `${project.color}10` : '#f1f5f9'
+                                      }}
                                    >
                                       <button
                                          onClick={(e) => { 
@@ -415,7 +609,7 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                                             task.status === 'Completed' ? "text-emerald-500 scale-110" : "text-slate-200 hover:text-primary"
                                          )}
                                       >
-                                         {task.status === 'Completed' ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5 border-[3px] rounded-full border-current text-transparent" />}
+                                         {task.status === 'Completed' ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5 border-[2.5px] rounded-full border-current text-transparent" />}
                                       </button>
                                       <span className={cn(
                                          "font-bold text-xs tracking-tight flex-1 transition-all duration-300",
@@ -424,7 +618,12 @@ function CompanyWorkspace({ companyId, onBack }: { companyId: string; onBack: ()
                                          {task.name}
                                       </span>
                                       {task.estimatedDuration && (
-                                         <span className="px-2 py-1 rounded bg-slate-50 text-[8px] font-black tracking-widest uppercase text-slate-400 border border-slate-100">
+                                         <span className="px-2 py-1 rounded-lg text-[8px] font-black tracking-widest uppercase border transition-colors"
+                                            style={{ 
+                                               backgroundColor: `${project.color}0D`,
+                                               borderColor: `${project.color}15`,
+                                               color: project.color
+                                            }}>
                                             {task.estimatedDuration} HR
                                          </span>
                                       )}
@@ -627,67 +826,92 @@ export default function CompaniesPage() {
           
           return (
             <div key={company.id} 
-              className="group bg-white rounded-[40px] border border-slate-100 p-10 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex flex-col min-h-[400px] cursor-pointer"
+              className="group relative rounded-[48px] border p-10 transition-all duration-500 flex flex-col min-h-[420px] cursor-pointer overflow-hidden"
+              style={{ 
+                backgroundColor: `${company.color}05`, 
+                borderColor: `${company.color}20`,
+                boxShadow: `0 10px 30px -15px ${company.color}15`
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = `0 30px 60px -12px ${company.color}30`;
+                e.currentTarget.style.transform = 'translateY(-6px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = `0 10px 30px -15px ${company.color}15`;
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
               onClick={() => setSelectedCompanyId(company.id)}
             >
+              {/* Decorative Brand Gradient */}
+              <div className="absolute top-0 right-0 w-40 h-40 blur-[80px] rounded-full opacity-20 pointer-events-none" style={{ backgroundColor: company.color }} />
+              
               <div className="flex justify-between items-start mb-10">
-                 <div className="w-16 h-16 rounded-[24px] bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-500" style={{ color: company.color }}>
+                 <div className="w-20 h-20 rounded-[28px] border overflow-hidden flex items-center justify-center shadow-sm group-hover:scale-110 transition-all duration-700 relative z-10" 
+                    style={{ 
+                      backgroundColor: `${company.color}15`, 
+                      borderColor: `${company.color}30`,
+                      color: company.color 
+                    }}>
                     {company.logoUrl ? (
                         <img src={company.logoUrl} alt="Logo" className="w-full h-full object-cover" />
                     ) : (
-                        <Building2 className="h-7 w-7" />
+                        <Building2 className="h-9 w-9" />
                     )}
                  </div>
                  <button 
                     onClick={(e) => { e.stopPropagation(); /* optional context menu */ }} 
-                    className="p-2 text-slate-200 hover:text-primary transition-all opacity-0 group-hover:opacity-100 active:scale-95"
+                    className="p-2 text-slate-300 hover:text-slate-900 transition-all opacity-0 group-hover:opacity-100 active:scale-95 relative z-10"
                  >
                     <MoreVertical className="h-5 w-5" />
                  </button>
               </div>
 
-              <div className="flex-1 mb-8">
-                 <div className="flex items-center gap-3 mb-2">
-                     <h3 className="text-2xl font-bold tracking-tight text-slate-900 group-hover:text-primary transition-colors pr-2 truncate">{company.name}</h3>
-                     <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: company.color }} />
-                 </div>
-                 <p className="text-sm text-slate-400 font-medium leading-relaxed line-clamp-2">
-                    {company.description || 'Enterprise-level strategic partnership.'}
-                 </p>
-              </div>
+               <div className="flex-1 mb-10 relative z-10">
+                  <div className="flex items-center gap-4 mb-3">
+                      <h3 className="text-3xl font-black tracking-tighter text-slate-900 transition-colors pr-2 truncate">{company.name}</h3>
+                      <div className="w-3 h-3 rounded-full shrink-0 shadow-sm animate-pulse" style={{ backgroundColor: company.color }} />
+                  </div>
+                  <p className="text-sm text-slate-500 font-medium leading-relaxed line-clamp-3">
+                     {company.description || 'Enterprise-level strategic partnership fueling innovation.'}
+                  </p>
+               </div>
 
-              <div className="space-y-8">
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100 flex flex-col gap-1 transition-colors group-hover:bg-slate-50 group-hover:border-slate-200/50">
-                       <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                          <FolderKanban className="w-2.5 h-2.5" /> Initiatives
-                       </span>
-                       <span className="text-2xl font-bold text-slate-900">{stats.projectCount}</span>
-                    </div>
-                    <div className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100 flex flex-col gap-1 transition-colors group-hover:bg-slate-50 group-hover:border-slate-200/50">
-                       <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                          <Zap className="w-2.5 h-2.5" /> Hourly Rate
-                       </span>
-                       <span className="text-2xl font-bold text-slate-900 truncate">
-                          {company.currencyCode === 'USD' ? '$' : company.currencyCode} {company.hourlyRate || 0}
-                       </span>
-                    </div>
-                 </div>
+               <div className="space-y-10 relative z-10">
+                  <div className="grid grid-cols-2 gap-5">
+                     <div className="rounded-3xl p-6 border flex flex-col gap-1.5 transition-all group-hover:bg-white/40 shadow-sm"
+                        style={{ backgroundColor: `${company.color}0D`, borderColor: `${company.color}20` }}>
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] flex items-center gap-2" style={{ color: company.color }}>
+                           <FolderKanban className="w-3.5 h-3.5" /> Initiatives
+                        </span>
+                        <span className="text-3xl font-black text-slate-900">{stats.projectCount}</span>
+                     </div>
+                     <div className="rounded-3xl p-6 border flex flex-col gap-1.5 transition-all group-hover:bg-white/40 shadow-sm"
+                        style={{ backgroundColor: `${company.color}0D`, borderColor: `${company.color}20` }}>
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] flex items-center gap-2" style={{ color: company.color }}>
+                           <Zap className="w-3.5 h-3.5" /> Hourly Rate
+                        </span>
+                        <span className="text-3xl font-black text-slate-900 truncate">
+                           <span className="text-sm opacity-30 mr-1">{company.currencyCode === 'USD' ? '$' : company.currencyCode}</span>
+                           {company.hourlyRate || 0}
+                        </span>
+                     </div>
+                  </div>
 
-                 <div className="pt-8 border-t border-slate-50 flex items-center justify-between">
-                    <button 
-                       onClick={(e) => { e.stopPropagation(); deleteCompany(company.id); }}
-                       className="text-[10px] font-bold uppercase tracking-widest text-slate-300 hover:text-rose-500 transition-colors"
-                    >
-                       Remove Account
-                    </button>
-                    <button 
-                       className="flex items-center gap-2 group/btn text-primary font-bold text-xs"
-                    >
-                       View Dashboard <ArrowRight className="h-4 w-4 overflow-visible group-hover/btn:translate-x-1.5 transition-transform" />
-                    </button>
-                 </div>
-              </div>
+                  <div className="pt-8 border-t flex items-center justify-between" style={{ borderColor: `${company.color}15` }}>
+                     <button 
+                        onClick={(e) => { e.stopPropagation(); deleteCompany(company.id); }}
+                        className="text-[10px] font-bold uppercase tracking-widest text-slate-300 hover:text-rose-500 transition-colors"
+                     >
+                        Remove Account
+                     </button>
+                     <button 
+                        className="flex items-center gap-3 group/btn font-black text-[10px] uppercase tracking-widest transition-colors py-2 px-4 rounded-xl hover:bg-white/50"
+                        style={{ color: company.color }}
+                     >
+                        Dashboard <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover/btn:translate-x-1.5" />
+                     </button>
+                  </div>
+               </div>
             </div>
           );
         })}
@@ -711,5 +935,3 @@ export default function CompaniesPage() {
     </div>
   );
 }
-
-

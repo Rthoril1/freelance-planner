@@ -1,4 +1,4 @@
-import { addDays, setHours, setMinutes, startOfWeek, format, addMinutes } from 'date-fns';
+import { addDays, setHours, setMinutes, startOfWeek, format, addMinutes, isBefore, isSameDay } from 'date-fns';
 import { Task, UserProfile } from '@/types';
 import { generateId } from './utils';
 
@@ -15,17 +15,14 @@ export function autoScheduleTasks(
   const priorityWeight = { High: 3, Medium: 2, Low: 1 };
   const energyWeight = { High: 3, Medium: 2, Low: 1 };
   
-  // 1. Sort the base unassigned tasks
-  // New rule: Tasks > 5 hours get absolute priority (pinned to start of shift if possible)
+  // 1. Sort the base unassigned tasks: Priority (High > Medium > Low), then Duration (Descending)
   const sortedTasks = [...unassignedTasks].sort((a, b) => {
-    const aIsLong = a.estimatedDuration >= 5 ? 1 : 0;
-    const bIsLong = b.estimatedDuration >= 5 ? 1 : 0;
+    const wa = (priorityWeight[a.priority as keyof typeof priorityWeight] || 0);
+    const wb = (priorityWeight[b.priority as keyof typeof priorityWeight] || 0);
+    if (wa !== wb) return wb - wa;
     
-    if (aIsLong !== bIsLong) return bIsLong - aIsLong;
-    if (priorityWeight[a.priority] !== priorityWeight[b.priority]) {
-      return priorityWeight[b.priority] - priorityWeight[a.priority];
-    }
-    return energyWeight[b.energyLevel] - energyWeight[a.energyLevel];
+    // Within same priority, schedule longer tasks first
+    return (b.estimatedDuration || 0) - (a.estimatedDuration || 0) || (energyWeight[b.energyLevel || 'Medium'] - energyWeight[a.energyLevel || 'Medium']);
   });
 
   // 2. Expand recurring tasks into instances and assign to days based on load
@@ -43,11 +40,31 @@ export function autoScheduleTasks(
   const [endH, endM] = (profile.dailyAvailability?.end || '21:00').split(':').map(Number);
   const safeEndH = isNaN(endH) ? 21 : endH;
   const safeEndM = isNaN(endM) ? 0 : endM;
-  const maxHrsPerDay = profile.maxHoursPerDay || 8;
+  let maxHrsPerDay = 8;
+  if (profile.dailyAvailability) {
+    const [sh, sm] = profile.dailyAvailability.start.split(':').map(Number);
+    const [eh, em] = profile.dailyAvailability.end.split(':').map(Number);
+    const duration = (eh + em/60) - (sh + sm/60);
+    if (duration > 0) maxHrsPerDay = Math.max(8, Math.floor(duration * 10) / 10);
+  }
+  if (profile.maxHoursPerDay && profile.maxHoursPerDay > maxHrsPerDay) {
+    maxHrsPerDay = profile.maxHoursPerDay;
+  }
 
   // Track the next available minute for each day
   const dayMinutes: Record<number, number> = {};
-  profile.workDays.forEach(d => dayMinutes[d] = safeStartH * 60 + safeStartM);
+  profile.workDays.forEach(d => {
+    let startMins = safeStartH * 60 + safeStartM;
+    const daysToAdd = (d - 6 + 7) % 7;
+    const dayDate = addDays(weekStart, daysToAdd);
+
+    if (isSameDay(dayDate, startDate)) {
+      // If scheduling for today, start from current time if it's already past shift start
+      const nowMins = startDate.getHours() * 60 + startDate.getMinutes();
+      startMins = Math.max(startMins, nowMins);
+    }
+    dayMinutes[d] = startMins;
+  });
 
   sortedTasks.forEach(task => {
     // Check global weekly capacity before processing this task at all
@@ -56,8 +73,14 @@ export function autoScheduleTasks(
     const timesPerDay = task.frequency?.timesPerDay || 1;
     const daysPerWeek = task.frequency?.daysPerWeek || 5;
 
-    // Pick top available days based on current load
-    const availableDays = [...profile.workDays].sort((a, b) => dayLoads[a] - dayLoads[b]);
+    // Pick top available days based on current load (ONLY considering future/active days)
+    const futureWorkDays = profile.workDays.filter(dayIndex => {
+      const daysToAdd = (dayIndex - 6 + 7) % 7;
+      const dayDate = addDays(weekStart, daysToAdd);
+      return !isBefore(dayDate, startDate) || isSameDay(dayDate, startDate);
+    });
+
+    const availableDays = [...futureWorkDays].sort((a, b) => dayLoads[a] - dayLoads[b]);
     const targetDays = availableDays.slice(0, Math.min(daysPerWeek, availableDays.length));
 
     targetDays.forEach(dayIndex => {
@@ -69,9 +92,17 @@ export function autoScheduleTasks(
         let remainingMinutes = task.estimatedDuration * 60;
         let currentTime = dayMinutes[dayIndex];
         const shiftEndMins = safeEndH * 60 + safeEndM;
-        // Mapping Mon-Sun (1-7) to Sat-Fri offset (0-6) relative to Saturday
         const daysToAdd = (dayIndex - 6 + 7) % 7; 
         const currentDayDate = addDays(weekStart, daysToAdd);
+
+        // Skip days before the start date (prevent scheduling in the past)
+        if (isSameDay(currentDayDate, startDate)) {
+          // If scheduling for today, we could start from "now", but for a cleaner plan 
+          // we'll start from the shift start. If the shift start is past, the dayMinutes 
+          // logic should naturally handle it if we update it.
+        } else if (isBefore(currentDayDate, startDate)) {
+          return; // Skip this day instance
+        }
 
         // Pre-calculate blocked periods just for this day once
         const blockedPeriods: { start: number; end: number }[] = [];
