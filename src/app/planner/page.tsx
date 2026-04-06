@@ -4,11 +4,11 @@ import { useStore } from '@/store/useStore';
 import { useNotificationStore } from '@/store/useNotificationStore';
 import { autoScheduleTasks } from '@/lib/scheduler';
 import { Task } from '@/types';
-import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, useDroppable, DragOverlay, DragStartEvent } from '@dnd-kit/core';
+import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, useDroppable, DragOverlay, DragStartEvent, DragMoveEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { addDays, format, isSameDay, parseISO, startOfWeek } from 'date-fns';
-import { Wand2, GripVertical, X, CheckCircle2, Moon, Utensils, Coffee, ShieldCheck, Calendar, Info, Zap } from 'lucide-react';
+import { addDays, format, isSameDay, parseISO, startOfWeek, addMinutes } from 'date-fns';
+import { Wand2, GripVertical, X, CheckCircle2, Moon, Utensils, Coffee, ShieldCheck, Calendar, Info, Zap, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PRESET_PLATFORMS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
@@ -32,8 +32,8 @@ function getTaskLayouts(dayTasks: Task[], startHour: number) {
   });
 
   taskItems.sort((a, b) => a.top - b.top);
-  const clusters: any[][] = [];
-  let currentCluster: any[] = [];
+  const clusters: (typeof taskItems[0])[][] = [];
+  let currentCluster: typeof taskItems[0][] = [];
   let clusterMaxBottom = 0;
 
   taskItems.forEach(item => {
@@ -70,13 +70,14 @@ function getTaskLayouts(dayTasks: Task[], startHour: number) {
 }
 
 function TaskCardUI({ 
-  task, companyName, projectName, projectColor, onUnschedule, 
+  task, companyName, projectName, projectColor, onUnschedule, onMove,
   isAbsolute, isDragging, layout, startHour, style: parentStyle, attributes, listeners
 }: { 
   task: Task, companyName: string, projectName: string, projectColor: string, 
-  onUnschedule?: () => void, isAbsolute?: boolean, isDragging?: boolean, 
+  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void,
+  isAbsolute?: boolean, isDragging?: boolean, 
   layout?: { left: number, width: number }, startHour: number, style?: React.CSSProperties,
-  attributes?: any, listeners?: any
+  attributes?: React.HTMLAttributes<HTMLDivElement>, listeners?: React.HTMLAttributes<HTMLDivElement>
 }) {
   const height = Math.max(0.35, task.estimatedDuration) * HOUR_HEIGHT;
   let style: React.CSSProperties = { ...parentStyle };
@@ -101,15 +102,17 @@ function TaskCardUI({
   const uiColor = projectColor;
   return (
     <div style={{ ...style, backgroundColor: task.status === 'Completed' ? undefined : uiColor + '0D' }}
-      className={cn("group relative rounded-[20px] transition-all duration-300 overflow-hidden shadow-sm border border-slate-100", 
+      className={cn("group relative rounded-xl transition-all duration-300 overflow-hidden shadow-sm border border-slate-100", 
         isDragging ? "shadow-2xl ring-4 ring-primary/20 border-primary z-[100] bg-white pointer-events-none" : "bg-white hover:border-primary/40 hover:shadow-lg z-20",
         task.status === 'Completed' ? "opacity-50 grayscale-[0.3]" : "", !isAbsolute ? "mb-3" : "")}>
       <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: uiColor }} />
       <div className={cn("flex flex-col h-full pl-4 pr-3 py-2.5 overflow-hidden", isAbsolute ? "" : "min-h-[70px] justify-between")}>
         <div className="flex items-start justify-between gap-2 mb-1">
-          <div {...(isAbsolute || task.status === 'Todo' ? { ...attributes, ...listeners } : {})} className="cursor-grab active:cursor-grabbing text-slate-200 hover:text-primary transition-colors mt-0.5">
-            <GripVertical className="w-3.5 h-3.5" />
-          </div>
+          {!isAbsolute && (
+            <div {...(task.status === 'Todo' ? { ...attributes, ...listeners } : {})} className="cursor-grab active:cursor-grabbing text-slate-200 hover:text-primary transition-colors mt-0.5">
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className={cn("font-bold text-xs tracking-tight leading-tight", task.status === 'Completed' ? "line-through text-slate-400" : "text-slate-900 group-hover:text-primary transition-colors")}>{task.name}</p>
             <div className="flex items-center gap-1.5 mt-1 border-t border-slate-50 pt-1">
@@ -129,15 +132,50 @@ function TaskCardUI({
           <div className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-tighter bg-white/50 border border-slate-100 px-2 py-0.5 rounded-lg">{task.estimatedDuration}h</div>
         </div>
       </div>
+
+      {/* Movement Controls Overlay - Only for Scheduled Tasks */}
+      {isAbsolute && onMove && !isDragging && (
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3 z-30 translate-y-2 group-hover:translate-y-0">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onMove('left'); }}
+            className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={(e) => { e.stopPropagation(); onMove('up'); }}
+              className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onMove('down'); }}
+              className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button 
+            onClick={(e) => { e.stopPropagation(); onMove('right'); }}
+            className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function SortableTaskCard({ 
-  task, companyName, projectName, projectColor, onUnschedule, startHour, isAbsolute = false, layout, containerId
+  task, companyName, projectName, projectColor, onUnschedule, onMove, startHour, isAbsolute = false, layout, containerId
 }: { 
   task: Task, companyName: string, projectName: string, projectColor: string, 
-  onUnschedule?: () => void, startHour: number, isAbsolute?: boolean, layout?: { left: number, width: number },
+  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void,
+  startHour: number, isAbsolute?: boolean, layout?: { left: number, width: number },
   containerId: string
 }) {
   const today = new Date();
@@ -150,7 +188,7 @@ function SortableTaskCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
     id: task.id, 
     data: { type: 'task', containerId },
-    disabled: !canMove
+    disabled: !canMove || isAbsolute
   });
   const style = { transform: CSS.Transform.toString(transform), transition };
   
@@ -158,7 +196,7 @@ function SortableTaskCard({
     <div ref={setNodeRef} style={{ ...style, opacity: isDragging ? 0.3 : 1 }}>
       <TaskCardUI 
         task={task} companyName={companyName} projectName={projectName} projectColor={projectColor} 
-        onUnschedule={onUnschedule} startHour={startHour} isAbsolute={isAbsolute} 
+        onUnschedule={onUnschedule} onMove={onMove} startHour={startHour} isAbsolute={isAbsolute} 
         isDragging={isDragging} layout={layout} attributes={attributes} listeners={listeners}
       />
     </div>
@@ -208,7 +246,7 @@ export default function PlannerPage() {
     setActiveId(event.active.id as string);
   };
 
-  const handleDragMove = (event: any) => {
+  const handleDragMove = (event: DragMoveEvent) => {
     const { active, over } = event;
     if (!over) { setDragTarget(null); return; }
 
@@ -248,51 +286,63 @@ export default function PlannerPage() {
     }
   };
 
+  const getDayBreaks = (date: Date) => {
+    const breaks: { start: number, end: number }[] = [];
+    const lunch = profile.lunchTime || { start: '13:00', durationMinutes: 60 };
+    const [lh, lm] = lunch.start.split(':');
+    const lStart = parseInt(lh) * 60 + parseInt(lm);
+    breaks.push({ start: lStart, end: lStart + lunch.durationMinutes });
+    profile.customBreaks?.forEach(b => {
+      const [bh, bm] = b.start.split(':');
+      const bStart = parseInt(bh) * 60 + parseInt(bm);
+      breaks.push({ start: bStart, end: bStart + b.durationMinutes });
+    });
+    return breaks;
+  };
+
+  const adjustForBreaks = (start: Date, end: Date, direction: 'up' | 'down') => {
+    let currentStart = new Date(start);
+    let currentEnd = new Date(end);
+    const duration = (currentEnd.getTime() - currentStart.getTime()) / (60 * 1000);
+    const dayBreaks = getDayBreaks(currentStart);
+
+    let attempts = 0;
+    while (attempts < 5) {
+      const sMins = currentStart.getHours() * 60 + currentStart.getMinutes();
+      const eMins = sMins + duration;
+      const overlap = dayBreaks.find(b => sMins < b.end && eMins > b.start);
+
+      if (!overlap) break;
+
+      if (direction === 'up') {
+        const diff = eMins - overlap.start;
+        currentStart = addMinutes(currentStart, -diff);
+        currentEnd = addMinutes(currentEnd, -diff);
+      } else {
+        const diff = overlap.end - sMins;
+        currentStart = addMinutes(currentStart, diff);
+        currentEnd = addMinutes(currentEnd, diff);
+      }
+      attempts++;
+    }
+    return { start: currentStart, end: currentEnd };
+  };
+
   const resolveShifts = (movedTaskId: string, newStart: Date, newEnd: Date, dayTasks: Task[]) => {
+    // Simplified: Only resolve immediate overlaps to prevent "column ripple"
     const updates: { id: string, updates: Partial<Task> }[] = [];
     const otherTasks = [...dayTasks].filter(t => t.id !== movedTaskId && t.status !== 'Completed');
+    const overlapThreshold = 15 * 60 * 1000;
 
-    // 1. Filter out tasks that can fit side-by-side (minor vertical overlap)
-    // If they overlap by less than 15 minutes, we let them stack side-by-side naturally
-    const overlapThreshold = 15 * 60 * 1000; // 15 mins
-
-    // 2. Identify Upward Displacement (for tasks now caught "above" the dropped one)
-    const tasksAbove = otherTasks.filter(t => new Date(t.scheduledStart!).getTime() < newStart.getTime())
-                               .sort((a, b) => new Date(b.scheduledStart!).getTime() - new Date(a.scheduledStart!).getTime());
-    let currentBlockStart = newStart.getTime();
-    for (const t of tasksAbove) {
+    const taskColliding = otherTasks.find(t => {
+      const tStart = new Date(t.scheduledStart!).getTime();
       const tEnd = new Date(t.scheduledEnd!).getTime();
-      const tStart = new Date(t.scheduledStart!).getTime();
-      if (tEnd > currentBlockStart + overlapThreshold) {
-        const duration = tEnd - tStart;
-        const newShiftedEnd = currentBlockStart;
-        const newShiftedStart = newShiftedEnd - duration;
-        updates.push({ id: t.id, updates: { 
-          scheduledStart: new Date(newShiftedStart).toISOString(), 
-          scheduledEnd: new Date(newShiftedEnd).toISOString() 
-        }});
-        currentBlockStart = newShiftedStart;
-      }
-    }
+      return (newStart.getTime() < tEnd - overlapThreshold && newEnd.getTime() > tStart + overlapThreshold);
+    });
 
-    // 3. Identify Downward Displacement (standard push)
-    const tasksBelow = otherTasks.filter(t => new Date(t.scheduledStart!).getTime() >= newStart.getTime())
-                               .sort((a, b) => new Date(a.scheduledStart!).getTime() - new Date(b.scheduledStart!).getTime());
-    let currentBlockEnd = newEnd.getTime();
-    for (const t of tasksBelow) {
-      const tStart = new Date(t.scheduledStart!).getTime();
-      // If the task starts before the previous one ends, push it down
-      if (tStart < currentBlockEnd - overlapThreshold) {
-        const tEnd = new Date(t.scheduledEnd!).getTime();
-        const duration = tEnd - tStart;
-        const newShiftedStart = currentBlockEnd;
-        const newShiftedEnd = newShiftedStart + duration;
-        updates.push({ id: t.id, updates: { 
-          scheduledStart: new Date(newShiftedStart).toISOString(), 
-          scheduledEnd: new Date(newShiftedEnd).toISOString() 
-        }});
-        currentBlockEnd = newShiftedEnd;
-      }
+    if (taskColliding) {
+      // If we are colliding, we don't automatically shift anymore
+      // handleMoveTask handles the "swap" logic now.
     }
 
     return updates;
@@ -375,6 +425,131 @@ export default function PlannerPage() {
       updateTask(activeTaskId, { status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined });
       return;
     }
+  };
+
+  const handleMoveTask = (taskId: string, direction: 'up' | 'down' | 'left' | 'right') => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !task.scheduledStart || !task.scheduledEnd) return;
+
+    const start = parseISO(task.scheduledStart);
+    const end = parseISO(task.scheduledEnd);
+    const durationMins = (end.getTime() - start.getTime()) / (60 * 1000);
+    
+    let newStart = new Date(start);
+    let newEnd = new Date(end);
+
+    const dayTasks = tasks.filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), start) && t.status !== 'Completed')
+                          .sort((a, b) => parseISO(a.scheduledStart!).getTime() - parseISO(b.scheduledStart!).getTime());
+    const currentIndex = dayTasks.findIndex(t => t.id === taskId);
+
+    // 1. Swap Logic for Up/Down
+    if (direction === 'up' && currentIndex > 0) {
+      const taskAbove = dayTasks[currentIndex - 1];
+      const taskAboveEnd = parseISO(taskAbove.scheduledEnd!);
+      // If we are touching or overlapping, SWAP
+      if (start.getTime() <= taskAboveEnd.getTime() + (1 * 60 * 1000)) {
+        const taskAboveStart = parseISO(taskAbove.scheduledStart!);
+        const aboveDuration = (taskAboveEnd.getTime() - taskAboveStart.getTime()) / (60 * 1000);
+        
+        const swappedMovedStart = new Date(taskAboveStart);
+        const swappedMovedEnd = new Date(swappedMovedStart.getTime() + (durationMins * 60 * 1000));
+        const swappedAboveStart = new Date(swappedMovedEnd);
+        const swappedAboveEnd = new Date(swappedAboveStart.getTime() + (aboveDuration * 60 * 1000));
+
+        updateTasks([
+          { id: taskId, updates: { scheduledStart: swappedMovedStart.toISOString(), scheduledEnd: swappedMovedEnd.toISOString() } },
+          { id: taskAbove.id, updates: { scheduledStart: swappedAboveStart.toISOString(), scheduledEnd: swappedAboveEnd.toISOString() } }
+        ]);
+        return;
+      }
+    }
+
+    if (direction === 'down' && currentIndex < dayTasks.length - 1) {
+      const taskBelow = dayTasks[currentIndex + 1];
+      const taskBelowStart = parseISO(taskBelow.scheduledStart!);
+      // If we are touching or overlapping, SWAP
+      if (end.getTime() >= taskBelowStart.getTime() - (1 * 60 * 1000)) {
+        const taskBelowEnd = parseISO(taskBelow.scheduledEnd!);
+        const belowDuration = (taskBelowEnd.getTime() - taskBelowStart.getTime()) / (60 * 1000);
+        
+        const swappedBelowStart = new Date(start);
+        const swappedBelowEnd = new Date(swappedBelowStart.getTime() + (belowDuration * 60 * 1000));
+        const swappedMovedStart = new Date(swappedBelowEnd);
+        const swappedMovedEnd = new Date(swappedMovedStart.getTime() + (durationMins * 60 * 1000));
+
+        updateTasks([
+          { id: taskId, updates: { scheduledStart: swappedMovedStart.toISOString(), scheduledEnd: swappedMovedEnd.toISOString() } },
+          { id: taskBelow.id, updates: { scheduledStart: swappedBelowStart.toISOString(), scheduledEnd: swappedBelowEnd.toISOString() } }
+        ]);
+        return;
+      }
+    }
+
+    // 2. Default Movement (if no swap)
+    if (direction === 'up') {
+      newStart = addMinutes(start, -15);
+      newEnd = addMinutes(end, -15);
+    } else if (direction === 'down') {
+      newStart = addMinutes(start, 15);
+      newEnd = addMinutes(end, 15);
+    } else if (direction === 'left') {
+      newStart = addDays(start, -1);
+      newEnd = addDays(end, -1);
+    } else if (direction === 'right') {
+      newStart = addDays(start, 1);
+      newEnd = addDays(end, 1);
+    }
+    
+    // Boundary Validation
+    if (direction === 'up' || direction === 'down') {
+      if (newStart.getHours() < startHour || newStart.getHours() > endHour) {
+        addNotification("Cannot move outside shift hours", "warning");
+        return;
+      }
+    }
+    
+    // Past Date Validation
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (newStart < today) {
+      addNotification("Cannot move to a past day", "warning");
+      return;
+    }
+
+    // Work Day Validation for Left/Right
+    if (direction === 'left' || direction === 'right') {
+      const dayNum = newStart.getDay() === 0 ? 7 : newStart.getDay();
+      if (!profile.workDays.includes(dayNum)) {
+        addNotification("Target day is outside your work week", "warning");
+        return;
+      }
+    }
+
+    // Magnetic Snap (Snap to neighbor if within 5 mins)
+    const snapThreshold = 5 * 60 * 1000;
+    const neighbor = dayTasks.find(t => t.id !== taskId && (
+      Math.abs(newStart.getTime() - parseISO(t.scheduledEnd!).getTime()) < snapThreshold ||
+      Math.abs(newEnd.getTime() - parseISO(t.scheduledStart!).getTime()) < snapThreshold
+    ));
+
+    if (neighbor) {
+      if (newStart.getTime() < parseISO(neighbor.scheduledStart!).getTime()) {
+        // We are above the neighbor, snap our end to their start
+        newEnd = parseISO(neighbor.scheduledStart!);
+        newStart = new Date(newEnd.getTime() - (durationMins * 60 * 1000));
+      } else {
+        // We are below the neighbor, snap our start to their end
+        newStart = parseISO(neighbor.scheduledEnd!);
+        newEnd = new Date(newStart.getTime() + (durationMins * 60 * 1000));
+      }
+    }
+
+    // Break Awareness for handled task
+    const adjusted = adjustForBreaks(newStart, newEnd, direction === 'up' ? 'up' : 'down');
+    newStart = adjusted.start;
+    newEnd = adjusted.end;
+
+    updateTask(taskId, { scheduledStart: newStart.toISOString(), scheduledEnd: newEnd.toISOString(), status: 'Scheduled' });
   };
 
   const runAutoSchedule = async () => {
@@ -499,6 +674,7 @@ export default function PlannerPage() {
                                       const info = getTaskInfo(t.id);
                                       return (
                                         <SortableTaskCard key={t.id} task={t} companyName={info.companyName} projectName={info.projectName} projectColor={info.projectColor} startHour={startHour} isAbsolute layout={layoutMap[t.id]} containerId={dayStr}
+                                          onMove={(dir) => handleMoveTask(t.id, dir)}
                                           onUnschedule={() => { if (t.parentTaskId) { useStore.getState().deleteTask(t.id); } else { updateTask(t.id, { status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined }); } }}
                                         />
                                       );

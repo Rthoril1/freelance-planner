@@ -2,12 +2,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { LayoutDashboard, CalendarDays, Building2, FolderKanban, ListTodo, Settings, Box } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
