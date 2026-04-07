@@ -1,15 +1,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, CalendarDays, Building2, FolderKanban, ListTodo, Settings, Box } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Building2, FolderKanban, Settings, Box } from 'lucide-react';
 
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Weekly Planner', href: '/planner', icon: CalendarDays },
   { name: 'Companies', href: '/companies', icon: Building2 },
-
-  { name: 'Tasks', href: '/tasks', icon: ListTodo },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

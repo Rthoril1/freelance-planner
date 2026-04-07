@@ -1,16 +1,16 @@
 'use client';
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { useNotificationStore } from '@/store/useNotificationStore';
-import { autoScheduleTasks } from '@/lib/scheduler';
 import { Task } from '@/types';
 import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, useDroppable, DragOverlay, DragStartEvent, DragMoveEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { addDays, format, isSameDay, parseISO, startOfWeek, addMinutes } from 'date-fns';
-import { Wand2, GripVertical, X, CheckCircle2, Moon, Utensils, Coffee, ShieldCheck, Calendar, Info, Zap, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { PRESET_PLATFORMS } from '@/lib/constants';
+import { X, Moon, Calendar, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TaskCreationModal } from '@/components/planner/TaskCreationModal';
+import { TaskEditModal } from '@/components/planner/TaskEditModal';
 
 const DAYS_OF_WEEK_LABELS: Record<number, string> = {
   6: 'Saturday', 7: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday'
@@ -70,111 +70,132 @@ function getTaskLayouts(dayTasks: Task[], startHour: number) {
 }
 
 function TaskCardUI({ 
-  task, companyName, projectName, projectColor, onUnschedule, onMove,
+  task, companyName, projectColor,
+  onUnschedule, onMove, onEdit,
   isAbsolute, isDragging, layout, startHour, style: parentStyle, attributes, listeners
 }: { 
-  task: Task, companyName: string, projectName: string, projectColor: string, 
-  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void,
+  task: Task, companyName: string, projectColor: string, 
+  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void, onEdit?: () => void,
   isAbsolute?: boolean, isDragging?: boolean, 
   layout?: { left: number, width: number }, startHour: number, style?: React.CSSProperties,
   attributes?: React.HTMLAttributes<HTMLDivElement>, listeners?: React.HTMLAttributes<HTMLDivElement>
 }) {
-  const height = Math.max(0.35, task.estimatedDuration) * HOUR_HEIGHT;
+  const height = Math.max(0.4, task.estimatedDuration) * HOUR_HEIGHT;
   let style: React.CSSProperties = { ...parentStyle };
   
-  // DRAG PRECISION FIX: 
-  // If we are dragging in the overlay, reset top/left to 0 so the dnd-kit transform 
-  // centers the grab handle under the mouse, instead of keeping the 10 AM offset.
   if (isDragging) {
-    style = { ...style, position: 'relative', top: 0, left: 0, width: '100%' };
+    style = { ...style, position: 'relative', top: 0, left: 0, width: '100%', zIndex: 1000 };
   } else if (isAbsolute && task.scheduledStart) {
+    const INSET = 4; // px gap matching the dashed placeholder box inset
     const startDate = new Date(task.scheduledStart);
     const startMins = startDate.getHours() * 60 + startDate.getMinutes();
     const top = ((startMins - startHour * 60) / 60) * HOUR_HEIGHT;
     style = {
-      ...style, position: 'absolute', top: `${top}px`, height: `${height}px`,
-      left: layout ? `${layout.left}%` : '6px',
-      width: layout ? `${layout.width}%` : 'calc(100% - 12px)',
-      paddingRight: layout ? '4px' : '0', marginBottom: 0
+      ...style, position: 'absolute',
+      top: `${top + INSET}px`,
+      height: `${Math.max(20, height - INSET * 2)}px`,
+      left: layout ? `calc(${layout.left}% + ${INSET}px)` : `${INSET}px`,
+      width: layout ? `calc(${layout.width}% - ${INSET * 2}px)` : `calc(100% - ${INSET * 2}px)`,
+      zIndex: 30
     };
   }
 
-  const uiColor = projectColor;
+  const isCompact = height <= 45;
+
   return (
-    <div style={{ ...style, backgroundColor: task.status === 'Completed' ? undefined : uiColor + '0D' }}
-      className={cn("group relative rounded-xl transition-all duration-300 overflow-hidden shadow-sm border border-slate-100", 
-        isDragging ? "shadow-2xl ring-4 ring-primary/20 border-primary z-[100] bg-white pointer-events-none" : "bg-white hover:border-primary/40 hover:shadow-lg z-20",
-        task.status === 'Completed' ? "opacity-50 grayscale-[0.3]" : "", !isAbsolute ? "mb-3" : "")}>
-      <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: uiColor }} />
-      <div className={cn("flex flex-col h-full pl-4 pr-3 py-2.5 overflow-hidden", isAbsolute ? "" : "min-h-[70px] justify-between")}>
-        <div className="flex items-start justify-between gap-2 mb-1">
-          {!isAbsolute && (
-            <div {...(task.status === 'Todo' ? { ...attributes, ...listeners } : {})} className="cursor-grab active:cursor-grabbing text-slate-200 hover:text-primary transition-colors mt-0.5">
-              <GripVertical className="w-3.5 h-3.5" />
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className={cn("font-bold text-xs tracking-tight leading-tight", task.status === 'Completed' ? "line-through text-slate-400" : "text-slate-900 group-hover:text-primary transition-colors")}>{task.name}</p>
-            <div className="flex items-center gap-1.5 mt-1 border-t border-slate-50 pt-1">
-              <span className="text-[9px] font-bold" style={{ color: uiColor }}>{companyName}</span>
-              {projectName && <><span className="text-[8px] text-slate-200">·</span><span className="text-[9px] font-bold text-slate-400 truncate max-w-[90px]">{projectName}</span></>}
+    <div
+      style={{ ...style, backgroundColor: projectColor, borderLeft: `3px solid ${projectColor}dd` }}
+      className={cn(
+        "group relative overflow-hidden transition-all duration-150 cursor-pointer select-none",
+        isDragging ? "rotate-1 scale-105 shadow-2xl ring-2 ring-primary/40 z-[1000] rounded-md" : "hover:brightness-110 rounded-sm",
+        task.status === 'Completed' ? "opacity-40 grayscale" : "",
+        !isAbsolute ? "mb-0.5 rounded-sm" : ""
+      )}
+    >
+      {/* Subtle dark tint on top for text legibility */}
+      <div className="absolute inset-0 bg-black/15 pointer-events-none" />
+
+      {/* Card Content */}
+      <div
+        className="relative z-10 flex items-center h-full px-2 gap-1 overflow-hidden"
+        style={{ paddingTop: isCompact ? '0' : '4px', paddingBottom: isCompact ? '0' : '4px' }}
+        onClick={() => { if (isAbsolute && onEdit) onEdit(); }}
+        {...(task.status === 'Todo' ? { ...attributes, ...listeners } : {})}
+      >
+        {!isCompact ? (
+          <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+            <p className="text-[9px] font-black uppercase tracking-widest text-white/75 leading-none truncate mb-0.5">{companyName}</p>
+            <p className="text-[11px] font-bold text-white leading-snug line-clamp-2 drop-shadow-sm">{task.name}</p>
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              <span className="text-[9px] font-black text-white/60">{task.estimatedDuration}H</span>
+              {onUnschedule && (
+                <button
+                  onClick={e => { e.stopPropagation(); onUnschedule(); }}
+                  className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 bg-black/20 hover:bg-black/40 text-white rounded transition-all"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
             </div>
           </div>
-          {onUnschedule && (
-            <button onPointerDown={(e) => { e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); onUnschedule(); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg p-1 transition-all">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 mt-auto pt-1">
-          <div className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full", task.priority === 'High' ? "bg-rose-500/10 text-rose-500" : task.priority === 'Medium' ? "bg-amber-500/10 text-amber-500" : "bg-slate-100 text-slate-400")}>{task.priority || 'Medium'}</div>
-          {task.energyLevel && <div className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-full"><Zap className="w-2.5 h-2.5 fill-current" />{task.energyLevel}</div>}
-          <div className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-tighter bg-white/50 border border-slate-100 px-2 py-0.5 rounded-lg">{task.estimatedDuration}h</div>
-        </div>
+        ) : (
+          /* Ultra-compact single line for 30min cells */
+          <>
+            <p className="text-[10px] font-bold text-white leading-none truncate flex-1">
+              <span className="opacity-70">{companyName} · </span>{task.name}
+            </p>
+            {onUnschedule && (
+              <button
+                onClick={e => { e.stopPropagation(); onUnschedule(); }}
+                className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 bg-black/20 hover:bg-black/40 text-white rounded transition-all"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Movement Controls Overlay - Only for Scheduled Tasks */}
-      {isAbsolute && onMove && !isDragging && (
-        <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3 z-30 translate-y-2 group-hover:translate-y-0">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onMove('left'); }}
-            className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
+      {/* Direction arrows — only on hover, scaled to card */}
+      {isAbsolute && onMove && !isDragging && (() => {
+        const isCompactArrow = height <= 45;
+        return (
+          <div
+            className="absolute inset-0 bg-slate-900/75 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center z-40"
+            style={{ gap: isCompactArrow ? '3px' : '8px' }}
+            onClick={() => { if (onEdit) onEdit(); }}
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          
-          <div className="flex flex-col gap-3">
-            <button 
-              onClick={(e) => { e.stopPropagation(); onMove('up'); }}
-              className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
-            >
-              <ChevronUp className="w-4 h-4" />
+            <button onClick={e => { e.stopPropagation(); onMove('left'); }}
+               className={cn("rounded-full bg-white/20 hover:bg-white flex items-center justify-center text-white hover:text-slate-900 transition-all active:scale-95", isCompactArrow ? "w-4 h-4" : "w-7 h-7")}>
+               <ChevronLeft className={isCompactArrow ? "w-2.5 h-2.5" : "w-4 h-4"} />
             </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onMove('down'); }}
-              className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
-            >
-              <ChevronDown className="w-4 h-4" />
+            <div className={cn("flex", isCompactArrow ? "flex-row gap-1" : "flex-col gap-2")}>
+              <button onClick={e => { e.stopPropagation(); onMove('up'); }}
+                 className={cn("rounded-full bg-white/20 hover:bg-white flex items-center justify-center text-white hover:text-slate-900 transition-all active:scale-95", isCompactArrow ? "w-4 h-4" : "w-7 h-7")}>
+                 <ChevronUp className={isCompactArrow ? "w-2.5 h-2.5" : "w-4 h-4"} />
+              </button>
+              <button onClick={e => { e.stopPropagation(); onMove('down'); }}
+                 className={cn("rounded-full bg-white/20 hover:bg-white flex items-center justify-center text-white hover:text-slate-900 transition-all active:scale-95", isCompactArrow ? "w-4 h-4" : "w-7 h-7")}>
+                 <ChevronDown className={isCompactArrow ? "w-2.5 h-2.5" : "w-4 h-4"} />
+              </button>
+            </div>
+            <button onClick={e => { e.stopPropagation(); onMove('right'); }}
+               className={cn("rounded-full bg-white/20 hover:bg-white flex items-center justify-center text-white hover:text-slate-900 transition-all active:scale-95", isCompactArrow ? "w-4 h-4" : "w-7 h-7")}>
+               <ChevronRight className={isCompactArrow ? "w-2.5 h-2.5" : "w-4 h-4"} />
             </button>
           </div>
-
-          <button 
-            onClick={(e) => { e.stopPropagation(); onMove('right'); }}
-            className="w-7 h-7 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center text-slate-400 hover:text-primary hover:scale-110 active:scale-95 transition-all"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
 
+
 function SortableTaskCard({ 
-  task, companyName, projectName, projectColor, onUnschedule, onMove, startHour, isAbsolute = false, layout, containerId
+  task, companyName, projectColor, onUnschedule, onMove, onEdit, startHour, isAbsolute = false, layout, containerId
 }: { 
-  task: Task, companyName: string, projectName: string, projectColor: string, 
-  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void,
+  task: Task, companyName: string, projectColor: string, 
+  onUnschedule?: () => void, onMove?: (dir: 'up' | 'down' | 'left' | 'right') => void, onEdit?: () => void,
   startHour: number, isAbsolute?: boolean, layout?: { left: number, width: number },
   containerId: string
 }) {
@@ -195,8 +216,8 @@ function SortableTaskCard({
   return (
     <div ref={setNodeRef} style={{ ...style, opacity: isDragging ? 0.3 : 1 }}>
       <TaskCardUI 
-        task={task} companyName={companyName} projectName={projectName} projectColor={projectColor} 
-        onUnschedule={onUnschedule} onMove={onMove} startHour={startHour} isAbsolute={isAbsolute} 
+        task={task} companyName={companyName} projectColor={projectColor} 
+        onUnschedule={onUnschedule} onMove={onMove} onEdit={onEdit} startHour={startHour} isAbsolute={isAbsolute} 
         isDragging={isDragging} layout={layout} attributes={attributes} listeners={listeners}
       />
     </div>
@@ -213,13 +234,18 @@ function DroppableColumn({ id, children, className, type, disabled }: { id: stri
 }
 
 export default function PlannerPage() {
-  const { tasks, profile, companies, projects, updateTask, updateTasks, clearSchedule } = useStore();
+  const { tasks, profile, companies, projects, updateTask, updateTasks } = useStore();
   const addNotification = useNotificationStore(state => state.addNotification);
   const [mounted, setMounted] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dragTarget, setDragTarget] = useState<{ day: string, hour: number, mins: number } | null>(null);
-  const [hasScheduled, setHasScheduled] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalInitialDate, setModalInitialDate] = useState<Date | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const gridRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [weekOffset, setWeekOffset] = useState(0); // Each unit = 7 days (one week block)
 
   useEffect(() => { setMounted(true); }, []);
   
@@ -228,7 +254,7 @@ export default function PlannerPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   
-  const plannerStart = startOfWeek(new Date(), { weekStartsOn: 6 }); 
+  const plannerStart = addDays(startOfWeek(new Date(), { weekStartsOn: 6 }), weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(plannerStart, i));
   
   if (!mounted || !profile) return null;
@@ -239,7 +265,7 @@ export default function PlannerPage() {
   
   const getTaskInfo = (taskId: string) => {
     const t = tasks.find(x => x.id === taskId), p = projects.find(x => x.id === t?.projectId), c = companies.find(x => x.id === p?.companyId);
-    return { companyName: c?.name || 'Unknown', companyColor: c?.color || '#818CF8', projectColor: p?.color || c?.color || '#818CF8', projectName: p?.name || 'No Project' };
+    return { companyName: c?.name || 'Unknown', projectColor: p?.color || c?.color || '#818CF8' };
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -274,8 +300,7 @@ export default function PlannerPage() {
       const colEl = gridRefs.current[targetContainerId];
       if (colEl) {
         const colRect = colEl.getBoundingClientRect();
-        const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
-        const relTop = focusY - colRect.top + scrollY;
+        const relTop = focusY - colRect.top;
         const totalH = Math.max(0, relTop / HOUR_HEIGHT);
         const h = Math.floor(totalH + startHour);
         const m = Math.round(((totalH + startHour) % 1) * 60 / 15) * 15;
@@ -328,26 +353,6 @@ export default function PlannerPage() {
     return { start: currentStart, end: currentEnd };
   };
 
-  const resolveShifts = (movedTaskId: string, newStart: Date, newEnd: Date, dayTasks: Task[]) => {
-    // Simplified: Only resolve immediate overlaps to prevent "column ripple"
-    const updates: { id: string, updates: Partial<Task> }[] = [];
-    const otherTasks = [...dayTasks].filter(t => t.id !== movedTaskId && t.status !== 'Completed');
-    const overlapThreshold = 15 * 60 * 1000;
-
-    const taskColliding = otherTasks.find(t => {
-      const tStart = new Date(t.scheduledStart!).getTime();
-      const tEnd = new Date(t.scheduledEnd!).getTime();
-      return (newStart.getTime() < tEnd - overlapThreshold && newEnd.getTime() > tStart + overlapThreshold);
-    });
-
-    if (taskColliding) {
-      // If we are colliding, we don't automatically shift anymore
-      // handleMoveTask handles the "swap" logic now.
-    }
-
-    return updates;
-  };
-
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
     setDragTarget(null);
@@ -381,17 +386,20 @@ export default function PlannerPage() {
     if (isDay) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const isPastDay = new Date(targetContainerId) < today;
+      // Use days array for local-safe date (new Date(string) parses as UTC, shifting day in UTC- zones)
+      const targetDay = days.find(d => format(d, 'yyyy-MM-dd') === targetContainerId);
+      if (!targetDay) return;
+      const isPastDay = targetDay < today;
       if (isPastDay) {
         addNotification("Cannot move tasks to a past day", "warning");
         return;
       }
 
-      const dayDate = new Date(targetContainerId);
+      const dayDate = new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate());
       const columnElement = gridRefs.current[targetContainerId];
       if (activeRect && columnElement) {
         const columnRect = columnElement.getBoundingClientRect();
-        const relativeTop = activeRect.top - columnRect.top + (typeof window !== 'undefined' ? window.scrollY : 0);
+        const relativeTop = activeRect.top - columnRect.top;
         let totalHoursFromStart = relativeTop / HOUR_HEIGHT;
         
         // Safety Clamping: Ensure it doesn't fall above the first line
@@ -409,12 +417,8 @@ export default function PlannerPage() {
         const scheduledEnd = new Date(dayDate);
         scheduledEnd.setMinutes(dayDate.getMinutes() + activeTask.estimatedDuration * 60);
         
-        const dayTasks = tasks.filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), new Date(targetContainerId)));
-        const shiftUpdates = resolveShifts(activeTaskId, dayDate, scheduledEnd, dayTasks);
-        
         const updates = [
-          { id: activeTaskId, updates: { status: 'Scheduled' as const, scheduledStart: dayDate.toISOString(), scheduledEnd: scheduledEnd.toISOString() } },
-          ...shiftUpdates
+          { id: activeTaskId, updates: { status: 'Scheduled' as const, scheduledStart: dayDate.toISOString(), scheduledEnd: scheduledEnd.toISOString() } }
         ];
         updateTasks(updates);
       }
@@ -552,95 +556,190 @@ export default function PlannerPage() {
     updateTask(taskId, { scheduledStart: newStart.toISOString(), scheduledEnd: newEnd.toISOString(), status: 'Scheduled' });
   };
 
-  const runAutoSchedule = async () => {
-    if (hasScheduled) return;
-    setHasScheduled(true);
-    await clearSchedule();
-    const scheduled = autoScheduleTasks(
-      useStore.getState().tasks.filter(t => t.status === 'Todo' && !t.parentTaskId), 
-      profile, 
-      new Date() 
-    );
+  const handleBacklogClick = (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const duration = task.estimatedDuration;
     
-    const parentIdsScheduled = new Set<string>();
-    for (const t of scheduled) {
-      await useStore.getState().addTask(t);
-      if (t.parentTaskId) parentIdsScheduled.add(t.parentTaskId);
+    // Scan through all 14 days and all valid hours to find the first open block
+    for (const day of days) {
+      if (!profile.workDays.includes(day.getDay() === 0 ? 7 : day.getDay())) continue;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (day < today) continue; // Skip past days
+
+      const dayTasks = tasks.filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), day) && t.status !== 'Completed');
+      
+      for (const hour of hoursList) {
+        const candidateStart = new Date(day);
+        candidateStart.setHours(hour, 0, 0, 0);
+        
+        // Prevent scheduling in hours that have already passed today
+        if (candidateStart.getTime() <= new Date().getTime()) continue;
+
+        const candidateEnd = addMinutes(candidateStart, duration * 60);
+        
+        if (candidateEnd.getHours() > endHour && !(candidateEnd.getHours() === endHour && candidateEnd.getMinutes() === 0)) continue; // Doesn't fit in shift
+
+        const startMins = candidateStart.getHours() * 60 + candidateStart.getMinutes();
+        const endMins = candidateEnd.getHours() * 60 + candidateEnd.getMinutes();
+        
+        const breaks = getDayBreaks(candidateStart);
+        const collidesWithBreak = breaks.some(b => startMins < b.end && endMins > b.start);
+        if (collidesWithBreak) continue;
+
+        const overlapThreshold = 1 * 60 * 1000; // 1 minute allowed
+        const taskColliding = dayTasks.find(t => {
+          const tStart = new Date(t.scheduledStart!).getTime();
+          const tEnd = new Date(t.scheduledEnd!).getTime();
+          return (candidateStart.getTime() < tEnd - overlapThreshold && candidateEnd.getTime() > tStart + overlapThreshold);
+        });
+
+        if (!taskColliding) {
+           updateTask(taskId, {
+              status: 'Scheduled',
+              scheduledStart: candidateStart.toISOString(),
+              scheduledEnd: candidateEnd.toISOString()
+           });
+           addNotification(`Task scheduled to ${format(candidateStart, 'MMM dd, HH:mm')}`, 'success');
+           return;
+        }
+      }
     }
-    for (const pId of Array.from(parentIdsScheduled)) { await updateTask(pId, { status: 'Scheduled' }); }
+    
+    addNotification("No available slots found in the 2-week horizon", "warning");
   };
 
-  const handleReset = async () => {
-    setHasScheduled(false);
-    await clearSchedule();
-  };
-  
-  const unassignedTasks = tasks.filter(t => t.status === 'Todo' && !t.parentTaskId);
   const activeTask = activeId ? tasks.find(t => t.id === activeId) : null;
   const activeTaskInfo = activeTask ? getTaskInfo(activeTask.id) : null;
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
+      <TaskCreationModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setModalInitialDate(null); }} initialDate={modalInitialDate} />
+      <TaskEditModal task={editingTask} isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingTask(null); }} />
       <div className="flex flex-col space-y-8 animate-in fade-in duration-1000 min-h-[calc(100vh-120px)]">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-2">
-          <div className="space-y-1">
-            <h2 className="text-4xl font-bold tracking-tight text-slate-900">Weekly Planner</h2>
-            <p className="text-slate-400 font-medium text-sm">Distribute your bandwidth between clients</p>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2">
+          <div className="flex items-center gap-6">
+            <div className="space-y-1 block relative">
+              <h2 className="text-4xl font-bold tracking-tight text-slate-900">Weekly Planner</h2>
+              <p className="text-slate-400 font-medium text-sm">Distribute your bandwidth between clients</p>
+            </div>
+            {/* Calendar Navigation */}
+            <div className="flex items-center gap-3 pl-6 border-l border-slate-200">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setWeekOffset(o => o - 1)}
+                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:border-primary/30 hover:text-primary text-slate-400 font-bold transition-all shadow-sm active:scale-95"
+                  title="Previous week"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setWeekOffset(o => o + 1)}
+                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:border-primary/30 hover:text-primary text-slate-400 font-bold transition-all shadow-sm active:scale-95"
+                  title="Next week"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+              {weekOffset !== 0 && (
+                <button
+                  onClick={() => setWeekOffset(0)}
+                  className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary/70 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                  title="Back to today"
+                >
+                  Today
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-             <button onClick={handleReset} className="px-6 py-3 rounded-2xl border border-slate-200 bg-white text-xs font-bold text-slate-400 hover:text-rose-500 hover:border-rose-100 transition-all active:scale-95">Reset Grid</button>
-             <button 
-               onClick={runAutoSchedule} 
-               disabled={hasScheduled}
-               className={cn(
-                 "flex items-center gap-2 px-8 py-3 rounded-2xl text-xs font-bold transition-all shadow-xl",
-                 hasScheduled 
-                   ? "bg-slate-100 text-slate-300 shadow-none cursor-not-allowed opacity-60" 
-                   : "bg-primary text-white shadow-primary/30 hover:bg-primary/90 hover:scale-[1.02] active:scale-95"
-               )}
-             >
-               <Wand2 className="h-4 w-4" /> 
-               {hasScheduled ? 'Scheduled ✓' : 'Auto Schedule'}
-             </button>
-          </div>
+          {/* Company Capacity Summary */}
+          {(() => {
+            const totalCapacity = profile?.weeklyHoursAvailable || 40;
+            const companyTotals = tasks
+              .filter(t => t.scheduledStart && t.status !== 'Completed' && days.some(d => isSameDay(parseISO(t.scheduledStart!), d)))
+              .reduce((acc, t) => {
+                const info = getTaskInfo(t.id);
+                if (!acc[info.companyName]) acc[info.companyName] = { hours: 0, color: info.projectColor };
+                acc[info.companyName].hours += t.estimatedDuration || 0;
+                return acc;
+              }, {} as Record<string, { hours: number; color: string }>);
+            const totalScheduled = Object.values(companyTotals).reduce((s, c) => s + c.hours, 0);
+            const entries = Object.entries(companyTotals);
+            return entries.length > 0 ? (
+              <div className="flex-1 flex items-center gap-3 flex-wrap justify-end">
+                {entries.map(([name, { hours, color }]) => (
+                  <div key={name} className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-2 shadow-sm">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider">{name}</span>
+                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, (hours / totalCapacity) * 100)}%`, backgroundColor: color }} />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500">{hours}H</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm">
+                  <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Total</span>
+                  <span className={cn("text-[11px] font-bold", totalScheduled > totalCapacity ? "text-rose-400" : "text-white")}>{totalScheduled}H</span>
+                  <span className="text-[11px] font-bold text-slate-600">/ {totalCapacity}H</span>
+                </div>
+                <button onClick={() => { setModalInitialDate(null); setIsModalOpen(true); }} className="flex items-center gap-2 px-5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:text-primary hover:border-primary/30 transition-all shadow-sm active:scale-95">
+                  <Plus className="w-4 h-4" /> New Assignment
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setModalInitialDate(null); setIsModalOpen(true); }} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:text-primary hover:border-primary/30 transition-all shadow-sm active:scale-95">
+                  <Plus className="w-4 h-4" /> New Assignment
+                </button>
+              </div>
+            );
+          })()}
         </div>
-        <div className="flex flex-1 gap-6 overflow-hidden relative min-h-0">
-          <div className="w-[340px] flex-shrink-0 flex flex-col bg-white/40 backdrop-blur-md rounded-[32px] border border-white/60 p-6 shadow-inner overflow-hidden">
-             <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Zap className="h-5 w-5 text-primary" /></div><h3 className="text-xl font-bold text-slate-900 tracking-tight">Backlog</h3></div>
-                <span className="bg-primary text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg shadow-primary/20">{unassignedTasks.length}</span>
-             </div>
-             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
-                <SortableContext id="unassigned" items={unassignedTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                   <DroppableColumn id="unassigned" type="backlog" className="h-full min-h-[400px]">
-                      {unassignedTasks.map(task => { const info = getTaskInfo(task.id); return <SortableTaskCard key={task.id} task={task} companyName={info.companyName} projectName={info.projectName} projectColor={info.projectColor} startHour={startHour} containerId="unassigned" />; })}
-                      {unassignedTasks.length === 0 && <div className="flex flex-col items-center justify-center py-20 text-center opacity-30 select-none"><ShieldCheck className="w-16 h-16 text-primary mb-4" /><p className="text-xs font-bold uppercase tracking-widest">Queue is Clear</p></div>}
-                   </DroppableColumn>
-                </SortableContext>
-             </div>
-          </div>
-          <div className="flex-1 overflow-hidden bg-white rounded-[40px] border border-slate-100 flex flex-col shadow-sm">
-             <div className="flex-1 overflow-auto custom-scrollbar relative">
-                <div className="flex border-b border-slate-50 bg-white/95 sticky top-0 z-30 min-w-[900px] shadow-sm">
-                   <div className="w-20 border-r border-slate-50 shrink-0 bg-slate-50/20" />
+        <div className="flex flex-1 gap-6 relative">
+          <div className="flex-1 bg-white rounded-2xl border border-slate-100 flex flex-col shadow-sm">
+             <div ref={scrollContainerRef} className="flex-1 relative">
+                
+                {/* 1-WEEK HEADER WRAPPER */}
+                <div className="flex bg-slate-900 sticky top-0 z-50 w-full shadow-sm border-b border-slate-700 rounded-t-[40px] overflow-hidden">
+                   {/* Corner space left blank to keep hours col alignment perfect */}
+                   <div className="w-24 border-r border-slate-700 shrink-0 bg-slate-900" />
                    <div className="flex-1 flex">
-                      {days.map((day) => {
+                      {days.map((day, idx) => {
                         const isOffDay = !profile.workDays.includes(day.getDay() === 0 ? 7 : day.getDay());
+                        const dayTasks = tasks.filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), day) && t.status !== 'Completed');
+                        const dayTotal = dayTasks.reduce((acc, t) => acc + (t.estimatedDuration || 0), 0);
+                        const dailyCapacity = profile?.weeklyHoursAvailable ? (profile.weeklyHoursAvailable / Math.max(1, profile.workDays.length)).toFixed(1) : '8.0';
                         return (
-                          <div key={day.toISOString()} className={cn("flex-1 py-6 px-4 text-center border-r border-slate-50 last:border-r-0", isOffDay ? "bg-slate-50/50" : "bg-white")}>
-                             <p className="text-[10px] font-black text-primary/40 uppercase tracking-[0.2em] mb-1">{DAYS_OF_WEEK_LABELS[day.getDay() === 0 ? 7 : day.getDay()].substring(0, 3)}</p>
-                             <p className={cn("text-xl font-bold tracking-tight", isOffDay ? "text-slate-300" : "text-slate-900")}>{format(day, 'MMM dd')}</p>
+                          <div key={day.toISOString()} className={cn("flex-1 pt-2 pb-1 px-2 text-center border-r border-slate-700 last:border-r-0", isOffDay ? "bg-slate-800" : "bg-slate-900")}>
+                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">{DAYS_OF_WEEK_LABELS[day.getDay() === 0 ? 7 : day.getDay()].substring(0, 3)}</p>
+                             <p className={cn("text-base font-black tracking-tight", isOffDay ? "text-slate-500" : "text-white")}>{format(day, 'MMM dd')}</p>
+                             {!isOffDay && (
+                                <div className="mt-0.5 flex items-center justify-center gap-1">
+                                   <span className={cn("text-[9px] font-bold", dayTotal > parseFloat(dailyCapacity) ? "text-rose-400" : "text-slate-400")}>{dayTotal}H</span>
+                                   <span className="text-[9px] font-bold text-slate-600">/ {dailyCapacity}H</span>
+                                </div>
+                             )}
                           </div>
                         );
                       })}
                    </div>
+                   <div className="w-24 border-l border-slate-700 shrink-0 bg-slate-900" />
                 </div>
-                <div className="flex min-w-[900px] min-h-full content-start bg-grid-slate-50">
-                   <div className="w-20 border-r border-slate-50 shrink-0 select-none bg-slate-50/10">
-                      {hoursList.map(hour => (<div key={hour} className="h-[90px] border-b border-slate-50/50 px-4 py-3 text-right"><span className="text-[11px] font-bold text-slate-200">{hour.toString().padStart(2, '0')}:00</span></div>))}
-                   </div>
-                   <div className="flex-1 flex relative">
-                      <div className="absolute inset-0 pointer-events-none">{hoursList.map(hour => (<div key={`line-${hour}`} className="h-[90px] border-b border-slate-50/50 w-full" />))}</div>
+
+                <div className="flex w-full min-h-full content-start bg-grid-slate-50 relative rounded-b-2xl overflow-hidden">
+                    <div className="w-24 border-r border-slate-200 shrink-0 select-none bg-white z-20 overflow-hidden">
+                       {/* empty spacer removed — sticky header self-aligns */}
+                       {hoursList.map(hour => (
+                         <div key={hour} className="h-[90px] border-b border-slate-200 px-4 flex flex-col items-end justify-center group/h bg-white">
+                            <span className="text-xl font-black text-slate-800 group-hover/h:text-primary transition-colors">{hour.toString().padStart(2, '0')}</span>
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-tighter -mt-1">:00</span>
+                         </div>
+                       ))}
+                    </div>
+                    <div className="flex-1 flex relative">
+                      <div className="absolute inset-0 pointer-events-none">{hoursList.map(hour => (<div key={`line-${hour}`} className="h-[90px] border-b border-slate-200 w-full" />))}</div>
                       {days.map(day => {
                         const dayStr = format(day, 'yyyy-MM-dd'), dayTasks = tasks.filter(t => t.scheduledStart && isSameDay(parseISO(t.scheduledStart), day)), isOffDay = !profile.workDays.includes(day.getDay() === 0 ? 7 : day.getDay());
                         const today = new Date();
@@ -649,54 +748,102 @@ export default function PlannerPage() {
                         const breaks: any[] = [];
                         const lunch = profile.lunchTime || { start: '13:00', durationMinutes: 60 };
                         const [lh, lm] = lunch.start.split(':');
-                        breaks.push({ id: `lunch-${dayStr}`, type: 'lunch', start: parseInt(lh)*60 + parseInt(lm), duration: lunch.durationMinutes, name: 'FUEL BREAK', icon: <Utensils className="h-3.5 w-3.5" /> });
-                        profile.customBreaks?.forEach(b => { const [h, m] = b.start.split(':'); breaks.push({ id: b.id, type: 'break', start: parseInt(h)*60 + parseInt(m), duration: b.durationMinutes, name: 'RECHARGE', icon: <Coffee className="h-3.5 w-3.5" /> }); });
-                        return (
-                          <div key={dayStr} ref={(el) => { gridRefs.current[dayStr] = el; }} className={cn("flex-1 relative h-full border-r border-slate-50 last:border-r-0 transition-colors duration-500", isOffDay || isPastDay ? "bg-slate-50/30" : "hover:bg-primary/[0.005]")} style={{ minHeight: `${hoursList.length * HOUR_HEIGHT}px` }}>
-                             {isOffDay && <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center opacity-[0.04] p-10 select-none"><Moon className="w-32 h-32 -rotate-12 mb-6" /><p className="text-3xl font-black uppercase tracking-[0.4em] text-center leading-none">Rest Period</p></div>}
-                             {isPastDay && !isOffDay && <div className="absolute inset-0 pointer-events-none bg-slate-200/5 transition-opacity" title="Past Day" />}
-                             <DroppableColumn id={dayStr} type="day" className="h-full" disabled={isPastDay}>
-                                {dragTarget && dragTarget.day === dayStr && (
-                                  <div className="absolute left-1 right-1 z-[5] border-2 border-dashed border-primary/20 bg-primary/5 rounded-[20px] transition-all duration-75 pointer-events-none"
-                                       style={{ 
-                                         top: `${((dragTarget.hour * 60 + dragTarget.mins - startHour * 60) / 60) * HOUR_HEIGHT}px`, 
-                                         height: `${Math.max(0.35, activeTask?.estimatedDuration || 1) * HOUR_HEIGHT}px` 
-                                       }} />
-                                )}
-                                {breaks.map(b => {
-                                   const top = ((b.start - startHour * 60) / 60) * HOUR_HEIGHT, height = (b.duration / 60) * HOUR_HEIGHT;
-                                   if (top < 0 || top > hoursList.length * HOUR_HEIGHT) return null;
-                                   return (<div key={b.id} className={cn("absolute left-0 right-0 z-10 flex items-center justify-center gap-3 transition-all border-y border-dashed border-slate-100", b.type === 'lunch' ? "bg-amber-50/30 text-amber-500" : "bg-slate-100/30 text-slate-300")} style={{ top: `${top}px`, height: `${height}px` }}><div className="flex items-center gap-2.5 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white shadow-sm scale-90">{b.icon}<span className="text-[9px] font-black uppercase tracking-wider">{b.name}</span></div></div>);
-                                })}
-                                {(() => {
-                                   const layoutMap = getTaskLayouts(dayTasks, startHour);
-                                   return dayTasks.map(t => {
-                                      const info = getTaskInfo(t.id);
-                                      return (
-                                        <SortableTaskCard key={t.id} task={t} companyName={info.companyName} projectName={info.projectName} projectColor={info.projectColor} startHour={startHour} isAbsolute layout={layoutMap[t.id]} containerId={dayStr}
-                                          onMove={(dir) => handleMoveTask(t.id, dir)}
-                                          onUnschedule={() => { if (t.parentTaskId) { useStore.getState().deleteTask(t.id); } else { updateTask(t.id, { status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined }); } }}
-                                        />
-                                      );
-                                   });
-                                })()}
-                             </DroppableColumn>
-                          </div>
-                        );
+                        breaks.push({ id: `lunch-${dayStr}`, type: 'lunch', start: parseInt(lh)*60 + parseInt(lm), duration: lunch.durationMinutes });
+                        profile.customBreaks?.forEach(b => { const [h, m] = b.start.split(':'); breaks.push({ id: b.id, type: 'break', start: parseInt(h)*60 + parseInt(m), duration: b.durationMinutes }); });
+                         return (
+                           <div key={dayStr} ref={(el) => { gridRefs.current[dayStr] = el; }} className={cn("flex-1 relative h-full border-r border-slate-200 last:border-r-0 transition-colors duration-500", isOffDay || isPastDay ? "bg-slate-50/30" : "hover:bg-primary/[0.005]")} style={{ minHeight: `${hoursList.length * HOUR_HEIGHT}px` }}>
+                              {isOffDay && <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center opacity-[0.04] p-10 select-none z-[1]"><Moon className="w-32 h-32 -rotate-12 mb-6" /><p className="text-3xl font-black uppercase tracking-[0.4em] text-center leading-none">Rest Period</p></div>}
+                              
+
+                                 <DroppableColumn id={dayStr} type="day" className="h-full z-[5]" disabled={isPastDay}>
+                                    {/* ACTUAL INTERACTIVE SLOTS */}
+                                    <div className="absolute inset-0 flex flex-col">
+                                       {hoursList.map(h => (
+                                          <div key={h} className="h-[90px] w-full relative group/slot flex items-center justify-center p-2">
+                                             <button 
+                                               onClick={() => {
+                                                 const d = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, 0, 0, 0);
+                                                 setModalInitialDate(d);
+                                                 setIsModalOpen(true);
+                                               }}
+                                               className="w-full h-full rounded-2xl border-2 border-dashed border-slate-100 group-hover/slot:border-primary/30 group-hover/slot:bg-primary/[0.02] flex items-center justify-center text-transparent group-hover/slot:text-primary/40 transition-all pointer-events-auto"
+                                             >
+                                               <Plus className="w-8 h-8 pointer-events-none transform group-hover/slot:scale-110 transition-transform" />
+                                             </button>
+                                          </div>
+                                       ))}
+                                    </div>
+
+                                 {dragTarget && dragTarget.day === dayStr && (
+                                   <div className="absolute left-1 right-1 z-[20] border-2 border-dashed border-primary/20 bg-primary/5 rounded-[20px] transition-all duration-75 pointer-events-none"
+                                        style={{ 
+                                          top: `${((dragTarget.hour * 60 + dragTarget.mins - startHour * 60) / 60) * HOUR_HEIGHT}px`, 
+                                          height: `${Math.max(0.35, activeTask?.estimatedDuration || 1) * HOUR_HEIGHT}px` 
+                                        }} />
+                                 )}
+                                 {breaks.map(b => {
+                                    const INSET = 4;
+                                    const top = ((b.start - startHour * 60) / 60) * HOUR_HEIGHT, height = (b.duration / 60) * HOUR_HEIGHT;
+                                    if (top < 0 || top > hoursList.length * HOUR_HEIGHT) return null;
+                                    const isLunch = b.type === 'lunch';
+                                    return (
+                                      <div key={b.id}
+                                        className={cn(
+                                          "absolute z-[15] flex items-center justify-center transition-all rounded-sm",
+                                          isLunch ? "bg-amber-400" : "bg-blue-400"
+                                        )}
+                                        style={{
+                                          top: `${top + INSET}px`,
+                                          height: `${Math.max(16, height - INSET * 2)}px`,
+                                          left: `${INSET}px`,
+                                          right: `${INSET}px`,
+                                        }}
+                                      >
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow">
+                                          {isLunch ? 'LUNCH' : 'BREAK'}
+                                        </span>
+                                      </div>
+                                    );
+                                 })}
+                                 <div className="relative z-[25]">
+                                    {(() => {
+                                       const layoutMap = getTaskLayouts(dayTasks, startHour);
+                                       return dayTasks.map(t => {
+                                          const info = getTaskInfo(t.id);
+                                          return (
+                                            <SortableTaskCard key={t.id} task={t} companyName={info.companyName} projectColor={info.projectColor} startHour={startHour} isAbsolute layout={layoutMap[t.id]} containerId={dayStr}
+                                              onMove={(dir) => handleMoveTask(t.id, dir)}
+                                              onEdit={() => { setEditingTask(t); setIsEditModalOpen(true); }}
+                                              onUnschedule={() => { if (t.parentTaskId) { useStore.getState().deleteTask(t.id); } else { updateTask(t.id, { status: 'Todo', scheduledStart: undefined, scheduledEnd: undefined }); } }}
+                                            />
+                                          );
+                                       });
+                                    })()}
+                                 </div>
+                              </DroppableColumn>
+                           </div>
+                         );
                       })}
-                   </div>
-                </div>
+                    </div>
+                    <div className="w-24 border-l border-slate-200 shrink-0 select-none bg-white z-20 overflow-hidden">
+                       {hoursList.map(hour => (
+                         <div key={hour} className="h-[90px] border-b border-slate-200 px-4 flex flex-col items-start justify-center group/h bg-white">
+                            <span className="text-xl font-black text-slate-800 group-hover/h:text-primary transition-colors">{hour.toString().padStart(2, '0')}</span>
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-tighter -mt-1">:00</span>
+                         </div>
+                       ))}
+                    </div>
+                 </div>
              </div>
           </div>
         </div>
       </div>
       <DragOverlay dropAnimation={null} zIndex={1000}>
         {activeTask && activeTaskInfo ? (
-          <div className="w-[300px]" style={{ transformOrigin: 'top left' }}>
+          <div className="w-[240px]" style={{ transformOrigin: 'top left' }}>
              <TaskCardUI 
                 task={activeTask} 
                 companyName={activeTaskInfo.companyName} 
-                projectName={activeTaskInfo.projectName} 
                 projectColor={activeTaskInfo.projectColor} 
                 startHour={startHour} 
                 isDragging
